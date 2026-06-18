@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RunStatus {
+  ACTIVE
+  VICTORY
+  DEFEAT
+  ABANDONED
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REVIEW
+  REJECTED
+}
+
+model User {
+  id            String                @id @default(cuid())
+  name          String?
+  email         String?               @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  runs          Run[]
+  heroUnlocks   HeroUnlock[]
+  achievements  Achievement[]
+  cosmetics     CosmeticEntitlement[]
+  auditEvents   AuditEvent[]
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Run {
+  id                 String             @id @default(cuid())
+  ownerId            String
+  owner              User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  engineVersion      String
+  contentVersion     String
+  version            Int                @default(0)
+  status             RunStatus          @default(ACTIVE)
+  sequence           Int                @default(0)
+  seedCiphertext     String
+  stateJson          Json
+  score              Int?
+  verificationStatus VerificationStatus @default(PENDING)
+  commands           RunCommand[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  finishedAt         DateTime?
+
+  @@index([ownerId, status])
+  @@index([verificationStatus, score])
+}
+
+model RunCommand {
+  id             String   @id @default(cuid())
+  runId          String
+  run            Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sequence       Int
+  idempotencyKey String
+  type           String
+  payloadJson    Json
+  responseJson   Json
+  createdAt      DateTime @default(now())
+
+  @@unique([runId, idempotencyKey])
+  @@unique([runId, sequence])
+}
+
+model HeroUnlock {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  heroId      String
+  unlockedAt  DateTime @default(now())
+  sourceRunId String?
+
+  @@unique([userId, heroId])
+  @@index([userId])
+}
+
+model Achievement {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String
+  unlockedAt    DateTime @default(now())
+  sourceRunId   String?
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+model CosmeticEntitlement {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cosmeticId String
+  source     String
+  grantedAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@unique([userId, cosmeticId])
+  @@index([userId, revokedAt])
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  actorId       String?
+  actor         User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action        String
+  resourceType  String
+  resourceId    String?
+  outcome       String
+  correlationId String
+  metadataJson  Json
+  createdAt     DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+}
