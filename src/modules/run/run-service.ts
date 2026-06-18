@@ -120,3 +120,5 @@ export function createRunService({ prisma, seedSecret }: Dependencies) {
     },
   };
 }
+
+export type RunService = ReturnType<typeof createRunService>;
