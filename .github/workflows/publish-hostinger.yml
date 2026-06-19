@@ -20,6 +20,7 @@ jobs:
     env:
       CI: true
       NEXT_TELEMETRY_DISABLED: 1
+      DATABASE_URL: "postgresql://preview:preview@127.0.0.1:5432/preview?sslmode=disable"
     steps:
       - name: Checkout trusted source
         env:
