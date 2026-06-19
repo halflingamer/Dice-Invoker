@@ -32,3 +32,24 @@
 @keyframes location-pulse{50%{filter:drop-shadow(0 0 12px #f3c14f)}}
 @media(max-width:900px){.hero-sheet{display:none}.run-map{display:block;order:2;max-height:220px;border-width:2px}.battle-column{order:1}.route-scroll{height:168px}.route-graph{transform:scale(.82);transform-origin:top center}.game-shell{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.location-die{animation:none!important;transition:none!important}}
+
+/* Automatic combat dice */
+.battle-column{position:relative;grid-template-rows:94px minmax(250px,1fr) 42px}
+.combat-dice-overlay{position:absolute;z-index:8;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;gap:34px;pointer-events:none}
+.combat-die{width:138px;min-height:142px;padding:13px 10px;display:grid;place-items:center;align-content:center;gap:4px;border:5px double #e3c277;border-radius:18px;background:linear-gradient(145deg,#fff0c5,#c99b50);color:#25160d;box-shadow:inset -8px -8px 0 #6b421e55,inset 5px 5px 0 #fff8dc,0 10px 26px #000d;pointer-events:auto}
+.combat-die-defense{border-color:#7dc9ff;background:linear-gradient(145deg,#e8f5ff,#71a9d2)}
+.combat-die small{font-weight:900;text-transform:uppercase;letter-spacing:.08em}.combat-die strong{font-size:3.2rem;line-height:1}.combat-die span{font-size:.75rem;font-weight:800}.combat-die button{margin-top:7px;border:2px solid #3a1f12;border-radius:7px;padding:6px 9px;background:#6c2da0;color:#fff2cb;font-size:.72rem}
+.combat-die.is-rolling{animation:combat-die-roll .6s cubic-bezier(.2,.8,.3,1)}
+.combat-dice-overlay.is-presenting{animation:combat-dice-exit .6s ease-in forwards}
+.combat-dice-overlay.is-resolving .combat-die-damage{filter:drop-shadow(0 0 16px #ff6d45)}
+.combat-dice-overlay.is-resolving .combat-die-defense{filter:drop-shadow(0 0 16px #54c4ff)}
+@keyframes combat-die-roll{0%{opacity:0;transform:translateY(-90px) rotate(-160deg) scale(.55)}65%{opacity:1;transform:translateY(8px) rotate(12deg) scale(1.08)}100%{transform:none}}
+@keyframes combat-dice-exit{70%{opacity:1}100%{opacity:0;transform:translate(-50%,-30%) scale(.72)}}
+
+/* In-run class promotion */
+.promotion-backdrop{position:fixed;z-index:40;inset:0;display:grid;place-items:center;padding:18px;background:#050a12dc;backdrop-filter:blur(5px)}
+.promotion-panel{width:min(760px,100%);padding:24px;border:4px double #d2a94f;border-radius:16px;background:radial-gradient(circle at 50% 0,#30204b,#111927 58%,#090f17);box-shadow:0 24px 80px #000;color:#f5e4ba;text-align:center}
+.promotion-kicker{margin:0;color:#b98ce8;font-weight:900;text-transform:uppercase;letter-spacing:.14em}.promotion-panel h2{margin:8px 0 22px;color:#ffd36b;font-size:1.8rem}.promotion-options{display:grid;grid-template-columns:1fr 1fr;gap:16px}.promotion-card{position:relative;padding:22px 16px 16px;border:2px solid #806539;border-radius:12px;background:linear-gradient(#1b2839,#101823)}
+.promotion-die{display:grid;place-content:center;width:72px;height:72px;margin:0 auto 8px;clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);background:#b16add;color:#fff;font-size:1.5rem;font-weight:900;text-shadow:2px 2px #31104a}.promotion-card h3{margin:5px;color:#ffe39a;font-size:1.35rem}.promotion-card>strong{color:#8ed7ff}.promotion-card p{min-height:38px;font-size:.84rem;color:#d9ccb0}.promotion-card button{width:100%;min-height:44px;border:2px solid #e2b654;border-radius:8px;background:linear-gradient(#cc8d2c,#86520f);color:#fff7d2}.promotion-card button:focus-visible{outline:4px solid #70d6ff;outline-offset:3px}
+@media(max-width:900px){.battle-column{grid-template-rows:62px 170px 32px}.combat-dice-overlay{top:42%;gap:12px}.combat-die{width:104px;min-height:104px;padding:7px}.combat-die strong{font-size:2rem}.combat-die span{font-size:.62rem}.promotion-options{grid-template-columns:1fr}.promotion-panel{max-height:94vh;overflow:auto}}
+@media(prefers-reduced-motion:reduce){.combat-die,.combat-dice-overlay{animation:none!important}}

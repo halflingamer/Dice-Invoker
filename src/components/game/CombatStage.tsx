@@ -1,94 +1,152 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { DiceTray, type DisplayDie } from "./DiceTray";
+import { CombatDiceOverlay } from "./CombatDiceOverlay";
 import { EssenceMeter } from "./EssenceMeter";
 import { HeroSheet } from "./HeroSheet";
 import { PhaserBattle, type BattleAnimationEvent } from "./PhaserBattle";
+import { PromotionChoice } from "./PromotionChoice";
 import { RunMap } from "./RunMap";
 import { previewRunMap } from "./preview-run-adapter";
-import type { RunMap as RunMapModel } from "@/modules/game-engine/map";
+import { useAutoCombat } from "./use-auto-combat";
+import type { RunMap as RunMapModel, RoomType } from "@/modules/game-engine/map";
 
-const initialDice: DisplayDie[] = [
-  { id: "rusty-sword", name: "Espada Enferrujada", face: "Corte", value: 5, locked: false },
-  { id: "wooden-shield", name: "Escudo de Madeira", face: "Aparar", value: 2, locked: false },
-];
+const COMBAT_TYPES = new Set<RoomType>(["combat", "elite", "boss"]);
+const ENEMY_HP: Record<"combat" | "elite" | "boss", number> = { combat: 18, elite: 28, boss: 64 };
+const ENEMY_NAME: Record<"combat" | "elite" | "boss", string> = {
+  combat: "Slime de Recibo",
+  elite: "Inspetor Gelatinoso",
+  boss: "Supervisor Gelatinoso",
+};
 
 export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMap?: RunMapModel }>) {
-  const [dice, setDice] = useState(initialDice);
-  const [essence, setEssence] = useState(2);
-  const [enemyHp, setEnemyHp] = useState(18);
-  const [event, setEvent] = useState<BattleAnimationEvent | null>(null);
-  const [message, setMessage] = useState("Escolha o destino dos dados.");
   const [route, setRoute] = useState(() => ({
     availableRoomIds: initialMap.layers[0]!.nodes.map((node) => node.id),
     visitedRoomIds: [] as string[],
     currentRoomId: null as string | null,
   }));
+  const [pendingNextIds, setPendingNextIds] = useState<readonly string[]>([]);
+  const [combatActive, setCombatActive] = useState(false);
+  const [enemyMaxHp, setEnemyMaxHp] = useState(18);
+  const [enemyName, setEnemyName] = useState("Aguardando destino");
+  const [classSides, setClassSides] = useState<4 | 6>(4);
+  const [className, setClassName] = useState("Escudeiro");
+  const [promotionOpen, setPromotionOpen] = useState(false);
+  const [event, setEvent] = useState<BattleAnimationEvent | null>(null);
+  const [message, setMessage] = useState("Escolha um Dado de Local alcançável.");
   const isHostingerPreview = process.env.NEXT_PUBLIC_HOSTINGER_PREVIEW === "1";
 
-  const animate = (type: BattleAnimationEvent["type"]) => setEvent({ id: Date.now(), type });
-  const lock = (id: string) => {
-    setDice((current) => current.map((die) => die.id === id ? { ...die, locked: true } : die));
-    setMessage("Resultado travado.");
+  const finishCombat = () => {
+    setCombatActive(false);
+    setEvent({ id: Date.now(), type: "hit" });
+    setMessage("Vitória! Experiência da sala recebida.");
+    if (classSides === 4) {
+      setPromotionOpen(true);
+      return;
+    }
+    setRoute((current) => ({ ...current, availableRoomIds: [...pendingNextIds] }));
   };
-  const reroll = () => {
-    if (essence < 1) return;
-    setEssence((value) => value - 1);
-    setDice((current) => current.map((die) => die.locked ? die : {
-      ...die,
-      value: die.value === 6 ? 1 : die.value + 1,
-      face: die.id === "rusty-sword" ? "Golpe" : "Firmar",
-    }));
-    animate("reroll");
-    setMessage("O destino foi rerrolado.");
-  };
-  const activate = () => {
-    const damage = dice.find((die) => die.id === "rusty-sword")?.value ?? 0;
-    setEnemyHp((value) => Math.max(0, value - damage));
-    animate("hit");
-    setDice((current) => current.map((die) => ({ ...die, locked: false })));
-    setMessage(enemyHp - damage <= 0
-      ? "Slime derrotado! Recompensa liberada."
-      : `Escudeiro causou ${damage} de dano.`);
-  };
+
+  const combat = useAutoCombat({
+    encounterId: combatActive ? route.currentRoomId : null,
+    initialEnemyHp: enemyMaxHp,
+    sides: classSides,
+    onVictory: finishCombat,
+  });
+
   const chooseRoom = (roomId: string) => {
     if (!route.availableRoomIds.includes(roomId)) return;
     const node = initialMap.layers.flatMap((layer) => layer.nodes).find((candidate) => candidate.id === roomId);
     if (!node) return;
-    setRoute({
+    const isCombat = COMBAT_TYPES.has(node.type);
+    setPendingNextIds(node.nextNodeIds);
+    setRoute((current) => ({
       currentRoomId: roomId,
-      visitedRoomIds: [...route.visitedRoomIds, roomId],
-      availableRoomIds: [...node.nextNodeIds],
-    });
-    setMessage(`Destino escolhido: ${node.type}.`);
+      visitedRoomIds: [...current.visitedRoomIds, roomId],
+      availableRoomIds: isCombat ? [] : [...node.nextNodeIds],
+    }));
+    if (isCombat) {
+      const rank = node.type as "combat" | "elite" | "boss";
+      setEnemyMaxHp(ENEMY_HP[rank]);
+      setEnemyName(ENEMY_NAME[rank]);
+      setCombatActive(true);
+      setMessage("Os dados de dano e defesa foram invocados.");
+    } else {
+      setMessage(`Local resolvido: ${node.type}. Experiência de jornada recebida.`);
+    }
   };
 
-  return <Fragment>
-    {isHostingerPreview ? <div className="preview-notice" role="status" aria-label="Prévia Hostinger">
-      <strong>Prévia de demonstração</strong> — funciona localmente e não envia pontuação ao ranking.
-    </div> : null}
-    <main className="game-shell">
-      <HeroSheet />
-      <section className="battle-column">
-        <header className="combat-header">
-          <div><b>Escudeiro</b><span>♥ 28/40</span></div>
-          <div className="room-progress"><b>Sala 3/10</b><span>● ● ● ○ ○ ○ ○ ○ ○ ○</span></div>
-          <div className="enemy"><b>Slime de Recibo</b><span>♥ {enemyHp}/18</span></div>
-        </header>
-        <PhaserBattle event={event} />
-        <div className="status-line" aria-live="polite">
-          {message}<EssenceMeter value={essence} max={2} />
+  const reroll = (kind: "damage" | "defense") => {
+    combat.reroll(kind);
+    setEvent({ id: Date.now(), type: "reroll" });
+  };
+
+  const choosePromotion = (stageId: string) => {
+    const guardian = stageId === "guardian-d6";
+    setClassSides(6);
+    setClassName(guardian ? "Guardião" : "Guerreiro");
+    setPromotionOpen(false);
+    setRoute((current) => ({ ...current, availableRoomIds: [...pendingNextIds] }));
+    setMessage(`${guardian ? "Guardião" : "Guerreiro"} D6 desbloqueado nesta run.`);
+  };
+
+  const phaseMessage = combat.phase === "rolling"
+    ? "Dados em movimento…"
+    : combat.phase === "intervention"
+      ? "Você pode gastar essência antes da resolução."
+      : combat.phase === "resolving"
+        ? "Resolvendo dano e defesa…"
+        : combat.phase === "presenting"
+          ? `Ataque causou ${combat.damage.value}; defesa bloqueou ${combat.defense.value}.`
+          : message;
+
+  return (
+    <Fragment>
+      {isHostingerPreview ? (
+        <div className="preview-notice" role="status" aria-label="Prévia Hostinger">
+          <strong>Prévia de demonstração</strong> — funciona localmente e não envia pontuação ao ranking.
         </div>
-        <DiceTray dice={dice} essence={essence} busy={false} onLock={lock} onReroll={reroll} onActivate={activate} />
-      </section>
-      <RunMap
-        map={initialMap}
-        availableRoomIds={route.availableRoomIds}
-        visitedRoomIds={route.visitedRoomIds}
-        currentRoomId={route.currentRoomId}
-        onChoose={chooseRoom}
-      />
-    </main>
-  </Fragment>;
+      ) : null}
+      <main className="game-shell">
+        <HeroSheet />
+        <section className="battle-column">
+          <header className="combat-header">
+            <div><b>{className} D{classSides}</b><span>♥ 24/24</span></div>
+            <div className="room-progress"><b>Sala {route.visitedRoomIds.length}/10</b><span>XP da run · evolução temporária</span></div>
+            <div className="enemy"><b>{enemyName}</b><span>♥ {combat.enemyHp}/{enemyMaxHp}</span></div>
+          </header>
+          <PhaserBattle event={event} />
+          {combat.phase !== "idle" ? (
+            <CombatDiceOverlay
+              phase={combat.phase}
+              damage={combat.damage}
+              defense={combat.defense}
+              essence={combat.essence}
+              onReroll={reroll}
+            />
+          ) : null}
+          <div className="status-line" aria-live="polite">
+            {phaseMessage}<EssenceMeter value={combat.essence} max={2} />
+          </div>
+        </section>
+        <RunMap
+          map={initialMap}
+          availableRoomIds={route.availableRoomIds}
+          visitedRoomIds={route.visitedRoomIds}
+          currentRoomId={route.currentRoomId}
+          onChoose={chooseRoom}
+        />
+      </main>
+      {promotionOpen ? (
+        <PromotionChoice
+          currentDie="D4"
+          options={[
+            { id: "warrior-d6", name: "Guerreiro", die: "D6", role: "Ataque", summary: "Faces ofensivas e decisões agressivas." },
+            { id: "guardian-d6", name: "Guardião", die: "D6", role: "Defesa", summary: "Bloqueio, proteção e contra-ataque." },
+          ]}
+          onChoose={choosePromotion}
+        />
+      ) : null}
+    </Fragment>
+  );
 }
