@@ -1,5 +1,7 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
+import { generateMap } from "@/modules/game-engine/map";
+import { createHeroProgression } from "@/modules/game-engine/progression";
 import type { RunState } from "./state";
 
 type CreateRunInput = Readonly<{ seed: string; heroId: string }>;
@@ -14,12 +16,21 @@ export function createRun(input: CreateRunInput): RunState {
 
   const enemy = season.enemies.find((candidate) => candidate.id === "receipt-slime");
   if (!enemy) throw new Error("starter enemy is missing");
+  const map = generateMap(input.seed);
+  const progression = createHeroProgression(hero.id, season);
 
   return {
     seed: input.seed,
     sequence: 0,
-    rngCursor: 0,
-    phase: "ready-to-roll",
+    map,
+    rngCursors: {
+      map: map.rngCursor,
+      encounter: 0,
+      combat: 0,
+      reward: 0,
+      event: 0,
+    },
+    phase: "map-reveal",
     heroId: hero.id,
     heroHp: hero.maxHp,
     heroMaxHp: hero.maxHp,
@@ -31,8 +42,13 @@ export function createRun(input: CreateRunInput): RunState {
     hasInsurance: false,
     equippedDieIds: [...hero.startingDiceIds],
     rolls: [],
-    availableRoomIds: [],
-    currentRoomId: "room-1-1",
+    visitedRoomIds: [],
+    currentLayer: 0,
+    availableRoomIds: map.layers[0]!.nodes.map((node) => node.id),
+    currentRoomId: null,
+    currentClassStageId: progression.currentStageId,
+    xp: progression.xp,
+    pendingPromotionIds: [],
     rewardOffer: null,
     eventOffer: null,
     eventAuditTrail: [],

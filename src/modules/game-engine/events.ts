@@ -1,5 +1,5 @@
 import type { SeasonEvent } from "@/modules/content/schema";
-import { createRollStream } from "./rng";
+import { createNamedRollStream } from "./rng";
 
 export type EventOptionOffer = Readonly<{
   offerId: string;
@@ -39,7 +39,7 @@ const INSURANCE_COST = 5;
 const THEFT_SUCCESS_CEILING = 40;
 
 export function createEventOffer(event: SeasonEvent, seed: string, initialCursor: number): EventOffer {
-  const stream = createRollStream(seed, initialCursor);
+  const stream = createNamedRollStream(seed, "event", initialCursor);
   const options = event.options.map((option, index): EventOptionOffer => ({
     offerId: `event-${index + 1}-${stream.roll(100)}`,
     optionId: option.id,
@@ -79,7 +79,7 @@ export function resolveEventChoice(input: ResolveEventChoiceInput): EventChoiceR
   }
 
   if (selected.optionId === "steal") {
-    const stream = createRollStream(input.seed, input.rngCursor);
+    const stream = createNamedRollStream(input.seed, "event", input.rngCursor);
     const succeeded = stream.roll(100) <= THEFT_SUCCESS_CEILING;
     return {
       ...unchanged,

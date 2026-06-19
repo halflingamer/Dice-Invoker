@@ -1,6 +1,6 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
-import { createRollStream } from "@/modules/game-engine/rng";
+import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { resolveEventChoice } from "@/modules/game-engine/events";
 import { chooseReward } from "@/modules/game-engine/rewards";
 import { runCommandSchema, type RunCommand } from "./command-schema";
@@ -21,14 +21,17 @@ function assertSequence(state: RunState, command: RunCommand) {
   }
 }
 
-function rollEquippedDice(state: RunState): Pick<RunState, "rolls" | "rngCursor"> {
-  const stream = createRollStream(state.seed, state.rngCursor);
+function rollEquippedDice(state: RunState): Pick<RunState, "rolls" | "rngCursors"> {
+  const stream = createNamedRollStream(state.seed, "combat", state.rngCursors.combat);
   const rolls = state.equippedDieIds.map((dieId): DieRoll => {
     const die = diceById.get(dieId);
     if (!die) throw new Error(`equipped die ${dieId} is missing from content`);
     return { dieId, sides: die.sides, result: stream.roll(die.sides), locked: false };
   });
-  return { rolls, rngCursor: stream.cursor() };
+  return {
+    rolls,
+    rngCursors: { ...state.rngCursors, combat: stream.cursor() },
+  };
 }
 
 function assertNever(value: never): never {
@@ -62,7 +65,7 @@ export function applyCommand(state: RunState, input: unknown): RunState {
       if (new Set(command.dieIds).size !== command.dieIds.length) {
         throw new Error("duplicate die id in reroll");
       }
-      const stream = createRollStream(state.seed, state.rngCursor);
+      const stream = createNamedRollStream(state.seed, "combat", state.rngCursors.combat);
       const requested = new Set(command.dieIds);
       for (const dieId of requested) {
         if (!state.equippedDieIds.includes(dieId)) throw new Error(`die ${dieId} is not equipped`);
@@ -76,7 +79,7 @@ export function applyCommand(state: RunState, input: unknown): RunState {
       return {
         ...state,
         rolls,
-        rngCursor: stream.cursor(),
+        rngCursors: { ...state.rngCursors, combat: stream.cursor() },
         essence: state.essence - 1,
         sequence: command.sequence,
       };
@@ -116,7 +119,7 @@ export function applyCommand(state: RunState, input: unknown): RunState {
         offer: state.eventOffer,
         offerId: command.optionId,
         seed: state.seed,
-        rngCursor: state.rngCursor,
+        rngCursor: state.rngCursors.event,
         gold: state.gold,
       });
       return {
@@ -127,7 +130,7 @@ export function applyCommand(state: RunState, input: unknown): RunState {
         gold: result.gold,
         hasInsurance: state.hasInsurance || result.hasInsurance,
         heroHp: Math.max(0, Math.min(state.heroMaxHp, state.heroHp + result.hpDelta)),
-        rngCursor: result.rngCursor,
+        rngCursors: { ...state.rngCursors, event: result.rngCursor },
         eventAuditTrail: [...state.eventAuditTrail, result.audit],
       };
     }

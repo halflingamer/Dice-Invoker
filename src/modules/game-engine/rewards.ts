@@ -1,4 +1,4 @@
-import { createRollStream } from "./rng";
+import { createNamedRollStream } from "./rng";
 
 export type RewardOption = Readonly<{
   offerId: string;
@@ -14,7 +14,7 @@ export function createRewardOffer(seed: string, initialCursor: number, candidate
   const candidates = [...new Set(candidateDieIds)];
   if (candidates.length < 3) throw new Error("at least three unique reward candidates are required");
 
-  const stream = createRollStream(seed, initialCursor);
+  const stream = createNamedRollStream(seed, "reward", initialCursor);
   const options = Array.from({ length: 3 }, (_, index): RewardOption => {
     const selectedIndex = stream.roll(candidates.length) - 1;
     const [dieId] = candidates.splice(selectedIndex, 1);

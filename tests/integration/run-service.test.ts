@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/modules/db/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { createRunService } from "@/modules/run/run-service";
 
 const service = createRunService({
@@ -21,6 +22,17 @@ describe("run service", () => {
   it("stores one command for concurrent requests with the same idempotency key", async () => {
     const user = await prisma.user.create({ data: { email: "invoker@example.test" } });
     const run = await service.start(user.id, "squire");
+    await prisma.run.update({
+      where: { id: run.id },
+      data: {
+        stateJson: JSON.parse(JSON.stringify({
+          ...run.state,
+          phase: "ready-to-roll",
+          currentRoomId: run.state.map.layers[0]!.nodes[0]!.id,
+          availableRoomIds: [],
+        })) as Prisma.InputJsonValue,
+      },
+    });
     const command = { type: "ROLL_DICE" as const, sequence: 1 };
 
     const [first, second] = await Promise.all([
