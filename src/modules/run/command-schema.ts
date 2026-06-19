@@ -4,6 +4,7 @@ const id = z.string().regex(/^[a-z0-9-]+$/).max(80);
 const sequence = z.number().int().positive();
 
 export const runCommandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("ACKNOWLEDGE_MAP_REVEAL"), sequence }).strict(),
   z.object({ type: z.literal("CHOOSE_ROOM"), sequence, roomId: id }).strict(),
   z.object({ type: z.literal("ROLL_DICE"), sequence }).strict(),
   z.object({ type: z.literal("LOCK_RESULT"), sequence, dieId: id }).strict(),
@@ -21,6 +22,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("CHOOSE_EVENT_OPTION"), sequence, optionId: id })
     .strict(),
+  z.object({ type: z.literal("CHOOSE_PROMOTION"), sequence, classStageId: id }).strict(),
 ]);
 
 export type RunCommand = z.infer<typeof runCommandSchema>;

@@ -3,6 +3,7 @@ import { seasonOne } from "@/modules/content/season-1";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { resolveEventChoice } from "@/modules/game-engine/events";
 import { chooseReward } from "@/modules/game-engine/rewards";
+import { applyPromotion } from "@/modules/game-engine/progression";
 import { runCommandSchema, type RunCommand } from "./command-schema";
 import type { DieRoll, RunState } from "./state";
 
@@ -43,6 +44,9 @@ export function applyCommand(state: RunState, input: unknown): RunState {
   assertSequence(state, command);
 
   switch (command.type) {
+    case "ACKNOWLEDGE_MAP_REVEAL":
+      requirePhase(state, "map-reveal");
+      return { ...state, phase: "room-choice", sequence: command.sequence };
     case "ROLL_DICE": {
       requirePhase(state, "ready-to-roll");
       const rolled = rollEquippedDice(state);
@@ -89,12 +93,27 @@ export function applyCommand(state: RunState, input: unknown): RunState {
       throw new Error("result activation is introduced with combat orchestration");
     case "CHOOSE_ROOM": {
       requirePhase(state, "room-choice");
-      if (!state.availableRoomIds.includes(command.roomId)) throw new Error("room is not available");
+      const currentNode = state.currentRoomId
+        ? state.map.layers.flatMap((layer) => layer.nodes).find((node) => node.id === state.currentRoomId)
+        : null;
+      const reachableIds = currentNode
+        ? currentNode.nextNodeIds
+        : state.map.layers[0]!.nodes.map((node) => node.id);
+      if (!reachableIds.includes(command.roomId) || !state.availableRoomIds.includes(command.roomId)) {
+        throw new Error("room is not available or reachable");
+      }
+      if (state.visitedRoomIds.includes(command.roomId)) throw new Error("room was already visited");
+      const selectedLayer = state.map.layers.find((layer) => layer.nodes.some((node) => node.id === command.roomId));
+      if (!selectedLayer || selectedLayer.index !== state.currentLayer + 1) {
+        throw new Error("room is not on the next layer");
+      }
       return {
         ...state,
         sequence: command.sequence,
         phase: "ready-to-roll",
         currentRoomId: command.roomId,
+        currentLayer: selectedLayer.index,
+        visitedRoomIds: [...state.visitedRoomIds, command.roomId],
         availableRoomIds: [],
       };
     }
@@ -132,6 +151,25 @@ export function applyCommand(state: RunState, input: unknown): RunState {
         heroHp: Math.max(0, Math.min(state.heroMaxHp, state.heroHp + result.hpDelta)),
         rngCursors: { ...state.rngCursors, event: result.rngCursor },
         eventAuditTrail: [...state.eventAuditTrail, result.audit],
+      };
+    }
+    case "CHOOSE_PROMOTION": {
+      requirePhase(state, "promotion");
+      if (!state.pendingPromotionIds.includes(command.classStageId)) {
+        throw new Error("invalid promotion choice");
+      }
+      const progression = applyPromotion(
+        { currentStageId: state.currentClassStageId, xp: state.xp },
+        command.classStageId,
+        season.classStages,
+      );
+      return {
+        ...state,
+        sequence: command.sequence,
+        phase: "room-choice",
+        currentClassStageId: progression.currentStageId,
+        xp: progression.xp,
+        pendingPromotionIds: [],
       };
     }
     default:

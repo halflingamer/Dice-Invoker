@@ -37,6 +37,78 @@ describe("run reducer", () => {
     });
   });
 
+  it("acknowledges the map before accepting a first room", () => {
+    const run = createRun({ seed: "server-seed", heroId: "squire" });
+
+    expect(() => applyCommand(run, {
+      type: "CHOOSE_ROOM",
+      sequence: 1,
+      roomId: run.availableRoomIds[0],
+    })).toThrow(/phase/i);
+
+    const revealed = applyCommand(run, { type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1 });
+    expect(revealed.phase).toBe("room-choice");
+  });
+
+  it("derives legal routes from the official graph", () => {
+    const run = applyCommand(
+      createRun({ seed: "route-seed", heroId: "squire" }),
+      { type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1 },
+    );
+    const firstRoomId = run.map.layers[0]!.nodes[0]!.id;
+    const bossId = run.map.layers.at(-1)!.nodes[0]!.id;
+
+    expect(() => applyCommand(run, { type: "CHOOSE_ROOM", sequence: 2, roomId: bossId })).toThrow(/available|reachable/i);
+    const entered = applyCommand(run, { type: "CHOOSE_ROOM", sequence: 2, roomId: firstRoomId });
+    expect(entered).toMatchObject({ currentRoomId: firstRoomId, currentLayer: 1 });
+    expect(entered.visitedRoomIds).toEqual([firstRoomId]);
+
+    const officialNextIds = run.map.layers[0]!.nodes[0]!.nextNodeIds;
+    const choosingNext = { ...entered, phase: "room-choice" as const, availableRoomIds: officialNextIds };
+    expect(() => applyCommand(choosingNext, { type: "CHOOSE_ROOM", sequence: 3, roomId: firstRoomId })).toThrow(/available|reachable|visited/i);
+    const skippedRoomId = run.map.layers[2]!.nodes[0]!.id;
+    expect(() => applyCommand(choosingNext, { type: "CHOOSE_ROOM", sequence: 3, roomId: skippedRoomId })).toThrow(/available|reachable/i);
+  });
+
+  it("accepts only server-offered promotions and no forged progression fields", () => {
+    const base = createRun({ seed: "promotion-seed", heroId: "squire" });
+    const promoting = {
+      ...base,
+      phase: "promotion" as const,
+      xp: 60,
+      pendingPromotionIds: ["warrior-d6", "guardian-d6"],
+    };
+
+    expect(() => runCommandSchema.parse({
+      type: "CHOOSE_PROMOTION",
+      sequence: 1,
+      classStageId: "warrior-d6",
+      xp: 999_999,
+    })).toThrow();
+    expect(() => applyCommand(base, {
+      type: "CHOOSE_PROMOTION",
+      sequence: 1,
+      classStageId: "warrior-d6",
+    })).toThrow(/phase/i);
+    expect(() => applyCommand(promoting, {
+      type: "CHOOSE_PROMOTION",
+      sequence: 1,
+      classStageId: "duelist-d8",
+    })).toThrow(/promotion/i);
+
+    const promoted = applyCommand(promoting, {
+      type: "CHOOSE_PROMOTION",
+      sequence: 1,
+      classStageId: "guardian-d6",
+    });
+    expect(promoted).toMatchObject({
+      phase: "room-choice",
+      currentClassStageId: "guardian-d6",
+      xp: 60,
+      pendingPromotionIds: [],
+    });
+  });
+
   it("rejects reroll before roll and spends essence exactly once", () => {
     const run = readyToRollRun();
 
@@ -80,10 +152,11 @@ describe("run reducer", () => {
   });
 
   it("accepts only rooms exposed by the official state", () => {
-    const run = { ...createRun({ seed: "server-seed", heroId: "squire" }), phase: "room-choice" as const, availableRoomIds: ["room-2-1", "room-2-2"] };
+    const base = createRun({ seed: "server-seed", heroId: "squire" });
+    const run = { ...base, phase: "room-choice" as const };
 
     expect(() => applyCommand(run, { type: "CHOOSE_ROOM", sequence: 1, roomId: "room-9-9" })).toThrow(/available/i);
-    expect(applyCommand(run, { type: "CHOOSE_ROOM", sequence: 1, roomId: "room-2-2" }).currentRoomId).toBe("room-2-2");
+    expect(applyCommand(run, { type: "CHOOSE_ROOM", sequence: 1, roomId: run.availableRoomIds[1]! }).currentRoomId).toBe(run.availableRoomIds[1]);
   });
 
   it("accepts only reward ids present in the official offer", () => {
