@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import {
   assertSafePreviewFiles,
   createHostingerHtaccess,
@@ -26,7 +27,7 @@ test("Hostinger preview rejects server routes and private configuration", () => 
 
   assert.throws(
     () => assertSafePreviewFiles([
-      { path: "index.html", content: "DATABASE_URL=postgresql:\/\/secret" },
+      { path: "index.html", content: "DATABASE_URL=postgresql://secret" },
     ]),
     /segredo/i,
   );
@@ -48,16 +49,19 @@ test("Windows invokes npm through Node instead of spawning a cmd file", () => {
 });
 
 test("static preview removes stale Next route types before building", () => {
+  const projectRoot = path.resolve("project");
+
   assert.deepEqual(
-    getPreviewBuildCleanupPaths("C:\\project"),
-    ["C:\\project\\.next", "C:\\project\\out"],
+    getPreviewBuildCleanupPaths(projectRoot),
+    [path.join(projectRoot, ".next"), path.join(projectRoot, "out")],
   );
 });
 
 test("API backup stays outside the Next app routing tree", () => {
-  const paths = getApiIsolationPaths("C:\\project");
+  const projectRoot = path.resolve("project");
+  const paths = getApiIsolationPaths(projectRoot);
 
-  assert.equal(paths.source, "C:\\project\\src\\app\\api");
-  assert.equal(paths.backup, "C:\\project\\.hostinger-api-backup");
-  assert.equal(paths.backup.includes("\\src\\app\\"), false);
+  assert.equal(paths.source, path.join(projectRoot, "src", "app", "api"));
+  assert.equal(paths.backup, path.join(projectRoot, ".hostinger-api-backup"));
+  assert.equal(paths.backup.includes(path.join("src", "app")), false);
 });
