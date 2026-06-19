@@ -5,7 +5,29 @@ export type RollStream = {
   cursor(): number;
 };
 
+export type RandomChannel = "map" | "encounter" | "combat" | "reward" | "event";
+
 const UINT32_RANGE = 0x1_0000_0000;
+const RANDOM_CHANNELS = new Set<RandomChannel>([
+  "map",
+  "encounter",
+  "combat",
+  "reward",
+  "event",
+]);
+
+export function createNamedRollStream(
+  seed: string,
+  channel: RandomChannel,
+  initialCursor = 0,
+): RollStream {
+  if (seed.length === 0) throw new Error("seed must not be empty");
+  if (!RANDOM_CHANNELS.has(channel)) throw new Error("unknown random channel");
+  const channelSeed = createHmac("sha256", seed)
+    .update(`dice-invoker/random-channel/v1/${channel}`)
+    .digest("hex");
+  return createRollStream(channelSeed, initialCursor);
+}
 
 export function createRollStream(seed: string, initialCursor = 0): RollStream {
   if (seed.length === 0) throw new Error("seed must not be empty");

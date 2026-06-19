@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRollStream } from "./rng";
+import { createNamedRollStream, createRollStream } from "./rng";
 
 describe("createRollStream", () => {
   it("repeats a sequence for the same seed and cursor", () => {
@@ -26,5 +26,36 @@ describe("createRollStream", () => {
   it("rejects invalid side counts", () => {
     const stream = createRollStream("invalid-die", 0);
     expect(() => stream.roll(1)).toThrow(/sides/i);
+  });
+});
+
+describe("createNamedRollStream", () => {
+  it("keeps deterministic random channels independent", () => {
+    const firstMap = createNamedRollStream("run-seed", "map");
+    const secondMap = createNamedRollStream("run-seed", "map");
+    const combat = createNamedRollStream("run-seed", "combat");
+
+    const firstMapResults = Array.from({ length: 8 }, () => firstMap.roll(20));
+    const secondMapResults = Array.from({ length: 8 }, () => secondMap.roll(20));
+    const combatResults = Array.from({ length: 8 }, () => combat.roll(20));
+
+    expect(firstMapResults).toEqual(secondMapResults);
+    expect(combatResults).not.toEqual(firstMapResults);
+  });
+
+  it("does not let combat rolls advance the map stream", () => {
+    const expectedMap = createNamedRollStream("run-seed", "map");
+    const combat = createNamedRollStream("run-seed", "combat");
+    Array.from({ length: 20 }, () => combat.roll(12));
+
+    const actualMap = createNamedRollStream("run-seed", "map");
+
+    expect(actualMap.roll(100)).toBe(expectedMap.roll(100));
+    expect(actualMap.cursor()).toBe(expectedMap.cursor());
+  });
+
+  it("rejects unknown random channels at runtime", () => {
+    expect(() => createNamedRollStream("run-seed", "" as "map")).toThrow(/channel/i);
+    expect(() => createNamedRollStream("run-seed", "forged" as "map")).toThrow(/channel/i);
   });
 });
