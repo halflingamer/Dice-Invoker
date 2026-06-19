@@ -6,18 +6,25 @@ import { EssenceMeter } from "./EssenceMeter";
 import { HeroSheet } from "./HeroSheet";
 import { PhaserBattle, type BattleAnimationEvent } from "./PhaserBattle";
 import { RunMap } from "./RunMap";
+import { previewRunMap } from "./preview-run-adapter";
+import type { RunMap as RunMapModel } from "@/modules/game-engine/map";
 
 const initialDice: DisplayDie[] = [
   { id: "rusty-sword", name: "Espada Enferrujada", face: "Corte", value: 5, locked: false },
   { id: "wooden-shield", name: "Escudo de Madeira", face: "Aparar", value: 2, locked: false },
 ];
 
-export function CombatStage() {
+export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMap?: RunMapModel }>) {
   const [dice, setDice] = useState(initialDice);
   const [essence, setEssence] = useState(2);
   const [enemyHp, setEnemyHp] = useState(18);
   const [event, setEvent] = useState<BattleAnimationEvent | null>(null);
   const [message, setMessage] = useState("Escolha o destino dos dados.");
+  const [route, setRoute] = useState(() => ({
+    availableRoomIds: initialMap.layers[0]!.nodes.map((node) => node.id),
+    visitedRoomIds: [] as string[],
+    currentRoomId: null as string | null,
+  }));
   const isHostingerPreview = process.env.NEXT_PUBLIC_HOSTINGER_PREVIEW === "1";
 
   const animate = (type: BattleAnimationEvent["type"]) => setEvent({ id: Date.now(), type });
@@ -45,6 +52,17 @@ export function CombatStage() {
       ? "Slime derrotado! Recompensa liberada."
       : `Escudeiro causou ${damage} de dano.`);
   };
+  const chooseRoom = (roomId: string) => {
+    if (!route.availableRoomIds.includes(roomId)) return;
+    const node = initialMap.layers.flatMap((layer) => layer.nodes).find((candidate) => candidate.id === roomId);
+    if (!node) return;
+    setRoute({
+      currentRoomId: roomId,
+      visitedRoomIds: [...route.visitedRoomIds, roomId],
+      availableRoomIds: [...node.nextNodeIds],
+    });
+    setMessage(`Destino escolhido: ${node.type}.`);
+  };
 
   return <Fragment>
     {isHostingerPreview ? <div className="preview-notice" role="status" aria-label="Prévia Hostinger">
@@ -64,7 +82,13 @@ export function CombatStage() {
         </div>
         <DiceTray dice={dice} essence={essence} busy={false} onLock={lock} onReroll={reroll} onActivate={activate} />
       </section>
-      <RunMap />
+      <RunMap
+        map={initialMap}
+        availableRoomIds={route.availableRoomIds}
+        visitedRoomIds={route.visitedRoomIds}
+        currentRoomId={route.currentRoomId}
+        onChoose={chooseRoom}
+      />
     </main>
   </Fragment>;
 }
