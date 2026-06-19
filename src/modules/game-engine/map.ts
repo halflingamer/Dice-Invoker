@@ -1,4 +1,4 @@
-import { createRollStream } from "./rng";
+import { createNamedRollStream, type RollStream } from "./rng";
 
 export type RoomType = "combat" | "elite" | "treasure" | "merchant" | "event" | "rest" | "boss";
 
@@ -18,37 +18,169 @@ export type RunMap = Readonly<{
   rngCursor: number;
 }>;
 
-const STANDARD_ROOM_TYPES: readonly RoomType[] = ["combat", "combat", "treasure", "merchant", "event", "rest", "elite"];
-const NINTH_LAYER_TYPES: readonly RoomType[] = ["combat", "treasure", "merchant", "event", "rest"];
+type NodeDraft = { id: string; type: RoomType; nextNodeIds: string[] };
+type LayerDraft = { index: number; nodes: NodeDraft[] };
 
-function roomTypeFor(layer: number, roll: (sides: number) => number): RoomType {
-  if (layer === 5) return "elite";
-  if (layer === 10) return "boss";
-  const types = layer === 9 ? NINTH_LAYER_TYPES : STANDARD_ROOM_TYPES;
-  return types[roll(types.length) - 1]!;
+const ROOM_BAG: readonly RoomType[] = [
+  "combat", "combat", "combat", "combat", "combat", "combat", "combat", "combat",
+  "event", "event", "event", "event",
+  "treasure", "treasure",
+  "merchant", "merchant",
+  "rest", "rest",
+  "elite",
+];
+const RECOVERY_TYPES = new Set<RoomType>(["rest", "merchant"]);
+const STANDARD_ROOM_TYPES: readonly RoomType[] = ["combat", "event", "treasure", "merchant", "rest", "elite"];
+const MAX_ASSIGNMENT_ATTEMPTS = 16;
+
+function shuffle<T>(values: readonly T[], stream: RollStream): T[] {
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const selected = stream.roll(index + 1) - 1;
+    [shuffled[index], shuffled[selected]] = [shuffled[selected]!, shuffled[index]!];
+  }
+  return shuffled;
 }
 
-export function generateMap(seed: string): RunMap {
-  const stream = createRollStream(seed);
-  const layerDrafts = Array.from({ length: 10 }, (_, offset) => {
-    const layer = offset + 1;
-    const width = layer === 1 || layer === 10 ? 1 : layer === 2 ? 2 : stream.roll(2);
+function connectLayers(current: LayerDraft, next: LayerDraft, stream: RollStream) {
+  if (next.nodes.length === 1) {
+    current.nodes.forEach((node) => node.nextNodeIds.push(next.nodes[0]!.id));
+    return;
+  }
+
+  const edges = current.nodes.map(() => new Set<number>());
+  current.nodes.forEach((_, index) => {
+    edges[index]!.add(Math.min(next.nodes.length - 1, Math.floor(index * next.nodes.length / current.nodes.length)));
+  });
+  next.nodes.forEach((_, index) => {
+    const source = Math.min(current.nodes.length - 1, Math.floor(index * current.nodes.length / next.nodes.length));
+    edges[source]!.add(index);
+  });
+
+  const branchingSource = stream.roll(current.nodes.length) - 1;
+  const existingTarget = [...edges[branchingSource]!][0]!;
+  const targetOffset = next.nodes.length === 2 ? 1 : stream.roll(next.nodes.length - 1);
+  const adjacentTarget = (existingTarget + targetOffset) % next.nodes.length;
+  edges[branchingSource]!.add(adjacentTarget);
+
+  current.nodes.forEach((node, index) => {
+    node.nextNodeIds.push(...[...edges[index]!].sort().map((target) => next.nodes[target]!.id));
+  });
+}
+
+function createTopology(stream: RollStream, recoveryLayer: number): LayerDraft[] {
+  const layers = Array.from({ length: 10 }, (_, offset): LayerDraft => {
+    const index = offset + 1;
+    const width = index === 10 ? 1 : index === recoveryLayer ? 2 : stream.roll(2) + 1;
     return {
-      index: layer,
+      index,
       nodes: Array.from({ length: width }, (_, nodeOffset) => ({
-        id: `room-${layer}-${nodeOffset + 1}`,
-        type: roomTypeFor(layer, (sides) => stream.roll(sides)),
+        id: `room-${index}-${nodeOffset + 1}`,
+        type: index === 10 ? "boss" : "combat",
+        nextNodeIds: [],
       })),
     };
   });
 
-  const layers = layerDrafts.map((layer, index): MapLayer => {
-    const nextNodeIds = layerDrafts[index + 1]?.nodes.map((node) => node.id) ?? [];
-    return {
-      index: layer.index,
-      nodes: layer.nodes.map((node) => ({ ...node, nextNodeIds: [...nextNodeIds] })),
-    };
-  });
+  layers.slice(0, -1).forEach((layer, index) => connectLayers(layer, layers[index + 1]!, stream));
+  return layers;
+}
 
-  return { layers, rngCursor: stream.cursor() };
+function assignFromBag(layers: LayerDraft[], recoveryLayer: number, stream: RollStream) {
+  let bag = shuffle(ROOM_BAG, stream);
+  const draw = (excluded: ReadonlySet<RoomType>): RoomType => {
+    let index = bag.findIndex((type) => !excluded.has(type));
+    if (index < 0) {
+      bag = shuffle(ROOM_BAG, stream);
+      index = bag.findIndex((type) => !excluded.has(type));
+    }
+    if (index >= 0) return bag.splice(index, 1)[0]!;
+    return STANDARD_ROOM_TYPES.find((type) => !excluded.has(type)) ?? "combat";
+  };
+
+  for (const [layerOffset, layer] of layers.slice(0, -1).entries()) {
+    if (layer.index === recoveryLayer) {
+      const recovery = shuffle<RoomType>(["rest", "merchant"], stream);
+      layer.nodes.forEach((node, index) => { node.type = recovery[index]!; });
+      continue;
+    }
+    const used = new Set<RoomType>();
+    layer.nodes.forEach((node) => {
+      const forbidden = new Set<RoomType>(used);
+      const previousLayer = layers[layerOffset - 1];
+      const beforePreviousLayer = layers[layerOffset - 2];
+      const predecessors = previousLayer?.nodes.filter((candidate) => candidate.nextNodeIds.includes(node.id)) ?? [];
+      if (predecessors.some((candidate) => candidate.type === "elite")) forbidden.add("elite");
+      for (const predecessor of predecessors) {
+        const grandPredecessors = beforePreviousLayer?.nodes.filter((candidate) => candidate.nextNodeIds.includes(predecessor.id)) ?? [];
+        if (grandPredecessors.some((candidate) => candidate.type === predecessor.type)) {
+          forbidden.add(predecessor.type);
+        }
+      }
+      node.type = draw(forbidden);
+      used.add(node.type);
+    });
+  }
+}
+
+function isFair(layers: readonly LayerDraft[]): boolean {
+  const nodes = new Map(layers.flatMap((layer) => layer.nodes.map((node) => [node.id, node])));
+  const reachableWithoutRecovery = new Set(
+    layers[0]!.nodes.filter((node) => !RECOVERY_TYPES.has(node.type)).map((node) => node.id),
+  );
+
+  for (const layer of layers.slice(0, -1)) {
+    for (const node of layer.nodes) {
+      for (const nextId of node.nextNodeIds) {
+        const next = nodes.get(nextId)!;
+        if (node.type === "elite" && next.type === "elite") return false;
+        for (const afterId of next.nextNodeIds) {
+          const after = nodes.get(afterId)!;
+          if (node.type === next.type && next.type === after.type) return false;
+        }
+        if (reachableWithoutRecovery.has(node.id) && !RECOVERY_TYPES.has(next.type)) {
+          reachableWithoutRecovery.add(next.id);
+        }
+      }
+    }
+  }
+
+  return !layers.at(-1)!.nodes.some((boss) => reachableWithoutRecovery.has(boss.id));
+}
+
+function applyFallback(layers: LayerDraft[], recoveryLayer: number) {
+  const alternating: readonly (readonly RoomType[])[] = [
+    ["combat", "event", "treasure"],
+    ["rest", "merchant", "elite"],
+  ];
+  for (const layer of layers.slice(0, -1)) {
+    const types = layer.index === recoveryLayer
+      ? (["rest", "merchant"] as const)
+      : alternating[Math.abs(layer.index - recoveryLayer) % alternating.length === 1 ? 0 : 1]!;
+    layer.nodes.forEach((node, index) => { node.type = types[index]!; });
+  }
+}
+
+export function generateMap(seed: string): RunMap {
+  const stream = createNamedRollStream(seed, "map");
+  const recoveryLayer = stream.roll(7) + 1;
+  const layers = createTopology(stream, recoveryLayer);
+
+  let valid = false;
+  for (let attempt = 0; attempt < MAX_ASSIGNMENT_ATTEMPTS; attempt += 1) {
+    assignFromBag(layers, recoveryLayer, stream);
+    if (isFair(layers)) {
+      valid = true;
+      break;
+    }
+  }
+  if (!valid) applyFallback(layers, recoveryLayer);
+
+  return {
+    layers: layers.map((layer) => ({
+      index: layer.index,
+      nodes: layer.nodes.map((node) => ({ ...node, nextNodeIds: [...node.nextNodeIds] })),
+    })),
+    rngCursor: stream.cursor(),
+  };
 }
