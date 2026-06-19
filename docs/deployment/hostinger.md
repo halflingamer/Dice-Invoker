@@ -44,3 +44,7 @@ Nunca envie `.env.local`, `src`, `prisma`, `node_modules` ou o repositório comp
 ## Produção completa
 
 Login, PostgreSQL, runs validadas e ranking exigem um host Node.js para o Next.js autoritário. O domínio pode continuar na Hostinger apontando por DNS para esse host quando essa etapa estiver pronta.
+
+## Capacidades desativadas na prévia
+
+A prévia usa um mapa público fixo e simulação local somente para apresentar rotas, combate automático e promoção. Autenticação, persistência, ranking e envio de score permanecem desativados, e resultados dessa demonstração nunca são aceitos pelo backend competitivo.

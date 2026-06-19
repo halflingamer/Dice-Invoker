@@ -1,5 +1,12 @@
 import type { RoomType, RunMap } from "@/modules/game-engine/map";
 
+export const previewCapabilities = Object.freeze({
+  authentication: false,
+  persistence: false,
+  ranking: false,
+  scoreSubmission: false,
+});
+
 const PREVIEW_TYPES: readonly RoomType[][] = [
   ["combat", "event", "treasure"],
   ["rest", "combat"],
