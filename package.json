@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:hostinger": "node tools/build-hostinger-preview.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:hostinger": "node --test tools/hostinger-preview.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
