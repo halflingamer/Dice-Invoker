@@ -1,0 +1,1 @@
+export function EssenceMeter({value,max}:{value:number;max:number}){return <div className="essence-dots" aria-label={`Essência ${value} de ${max}`}>{Array.from({length:max},(_,i)=><i className={i<value?"full":""} key={i}/>)}</div>}

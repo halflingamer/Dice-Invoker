@@ -1,26 +1,10 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", "Consolas", monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: "Segoe UI", system-ui, sans-serif;
-}
+:root{--ink:#091421;--ink-2:#101e2d;--wood:#4b2d1d;--wood-light:#765033;--parchment:#f2dfb6;--gold:#d6a63c;--violet:#7d32c7;--danger:#d64a46;--mint:#8fd9aa;--line:#c69a52;--text:#f7e8c4;background:var(--ink);color:var(--text)}
+*{box-sizing:border-box}html,body{min-height:100%;margin:0}body{background:radial-gradient(circle at 50% 20%,#22334a 0,var(--ink) 60%);font-family:Georgia,"Times New Roman",serif}button{font:700 1rem Georgia,serif}.game-shell{width:100%;min-height:100vh;display:grid;grid-template-columns:240px minmax(560px,1fr) 150px;gap:8px;padding:8px;background:#07111dcc}.hero-sheet,.run-map,.battle-column{border:2px solid #7f5a31;box-shadow:inset 0 0 0 2px #17100b,0 8px 25px #0009}.hero-sheet,.run-map{background:linear-gradient(#141d28,#0b131d);padding:18px}.hero-sheet h1{color:var(--gold);font-size:2.2rem;line-height:.85;text-align:center;letter-spacing:2px;text-shadow:2px 3px #000;margin:12px 0 34px}.hero-sheet h1 span{color:#f3eee2;font-size:1.65rem}.hero-sheet h2{background:var(--parchment);color:#2b1a10;text-align:center;font-size:1rem;padding:8px;margin:0 -8px 20px}.hero-sheet dl div{display:flex;justify-content:space-between;padding:5px}.hero-sheet h3{color:#e5c47e;border-bottom:1px solid #8f682f;padding-bottom:8px}.hero-sheet p{font-size:.85rem;line-height:1.35;color:#dbcda8}.battle-column{min-width:0;background:var(--wood)}.combat-header{height:94px;background:linear-gradient(#111f30,#08111d);display:grid;grid-template-columns:1fr 1.2fr 1fr;align-items:center;padding:12px 24px;border-bottom:2px solid #74502d}.combat-header>div{display:flex;flex-direction:column;gap:7px;font-size:1.1rem}.combat-header span{color:#f0d6a6}.combat-header .room-progress{text-align:center}.combat-header .room-progress span{color:#d6a63c;font-size:.8rem;letter-spacing:2px}.combat-header .enemy{text-align:right}.phaser-host{height:min(42vh,390px);min-height:250px;background:#231c28;overflow:hidden}.phaser-host canvas{display:block!important;width:100%!important;height:100%!important}.status-line{height:34px;display:flex;justify-content:center;align-items:center;gap:18px;background:#101a25;color:#e7d4a8;font-size:.85rem}.essence-dots{display:flex;gap:5px}.essence-dots i{width:10px;height:10px;border-radius:50%;background:#3d2d4c;border:1px solid #b989e4}.essence-dots i.full{background:#a63aff;box-shadow:0 0 8px #b04cff}.dice-tray{min-height:178px;display:grid;grid-template-columns:110px 1fr 170px;align-items:center;gap:12px;padding:14px;background:linear-gradient(90deg,#3b2519,#6a452b 50%,#3b2519);border-top:3px solid #9b6c39}.essence-orb{width:92px;height:92px;border-radius:50%;display:grid;place-content:center;text-align:center;background:radial-gradient(circle,#b94cff 0,#5b178d 48%,#170c29 70%);border:5px double #d0a0ed;box-shadow:0 0 18px #a642ff}.essence-orb strong{font-size:2.4rem}.essence-orb span{font-size:.72rem}.dice-list{display:grid;grid-template-columns:repeat(2,minmax(170px,1fr));gap:12px}.die-card{min-height:126px;background:var(--parchment);color:#24180f;border:3px solid #ad8a54;border-radius:10px;padding:12px;display:grid;grid-template-columns:1fr 58px 68px;gap:8px;align-items:center;box-shadow:inset 0 0 0 2px #5b3b22}.die-card.is-locked{outline:3px solid #46a8ff;box-shadow:0 0 16px #2a99ff}.die-card small,.die-card strong{display:block}.die-card small{font-weight:700}.die-card strong{margin-top:8px;color:#79451b}.die-face{width:52px;height:52px;border:2px solid #3a281b;border-radius:9px;background:#fff5d9;display:grid;place-content:center;font-size:1.8rem;font-weight:800}.die-card button{border:0;border-radius:7px;background:#514334;color:#fff4d6;padding:10px 4px}.die-card button:focus-visible,.action:focus-visible{outline:4px solid #71c7ff;outline-offset:2px}.die-card button:disabled{background:#2877b5}.dice-actions{display:grid;gap:12px}.action{min-height:54px;border-radius:8px;border:2px solid #2a170e;color:white;text-shadow:1px 2px #000;padding:8px}.action:disabled{opacity:.45}.reroll{background:linear-gradient(#9954d7,#5d258b)}.activate{background:linear-gradient(#e0a838,#a56e10)}.run-map{text-align:center}.run-map h2{font-size:1rem;color:#dcb56c}.map-node{width:36px;height:36px;border-radius:10px;margin:8px auto;display:grid;place-content:center;background:#32363b;border:2px solid #78736a;color:#cfc8ba;position:relative}.map-node:not(:last-child):after{content:"";position:absolute;width:2px;height:10px;background:#897958;top:34px;left:15px}.map-node.done{background:#2e5e49;border-color:#75c394}.map-node.current{background:#6e311b;border-color:#ffc44d;color:#fff;font-size:1.15rem;box-shadow:0 0 13px #e99628}
+@media(max-width:900px){.game-shell{grid-template-columns:1fr;padding:0}.hero-sheet,.run-map{display:none}.combat-header{height:62px;padding:5px 14px;font-size:.8rem}.combat-header>div{font-size:.82rem}.phaser-host{height:170px;min-height:170px}.dice-tray{grid-template-columns:75px 1fr 130px;height:126px;min-height:126px;padding:6px}.essence-orb{width:66px;height:66px}.essence-orb strong{font-size:1.8rem}.dice-list{gap:6px}.die-card{min-height:88px;grid-template-columns:1fr 42px 55px;padding:6px}.die-face{width:38px;height:38px;font-size:1.25rem}.die-card small{font-size:.7rem}.die-card strong{font-size:.72rem}.die-card button,.action{font-size:.75rem}.dice-actions{gap:6px}.action{min-height:38px}.status-line{height:24px;font-size:.7rem}}
+@media(max-width:620px) and (orientation:portrait){.dice-tray{grid-template-columns:1fr}.essence-orb{display:none}.dice-actions{grid-template-columns:1fr 1fr}.dice-list{overflow-x:auto}.combat-header .room-progress span{display:none}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+.battle-column{display:grid;grid-template-rows:94px minmax(250px,1fr) 34px auto}.phaser-host{height:100%;max-height:none}
+@media(max-width:900px){.battle-column{grid-template-rows:62px 170px 24px 126px}.phaser-host{height:170px}}
+.die-label{display:flex;align-items:center;gap:7px}.die-label img{image-rendering:pixelated;object-fit:contain;flex:0 0 auto}
+.die-card{grid-template-columns:minmax(0,1fr) 46px 48px;gap:6px;padding-inline:10px}.die-label{gap:4px}.die-label,.die-label span{min-width:0}.die-label small{overflow-wrap:anywhere;font-size:.68rem}.die-label strong{font-size:.72rem}.die-card button{min-width:0;padding-inline:1px;font-size:.68rem}

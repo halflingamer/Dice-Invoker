@@ -1,0 +1,1 @@
+export function RunMap(){return <aside className="run-map" aria-label="Mapa da run"><h2>Rota</h2>{Array.from({length:10},(_,i)=>i+1).map(room=><div key={room} className={`map-node ${room<3?"done":room===3?"current":""}`}>{room}</div>)}</aside>}
