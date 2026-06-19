@@ -69,4 +69,30 @@ describe("run command API", () => {
       { type: "ROLL_DICE", sequence: 1 },
     );
   });
+
+  it("rate limits the validated command class", async () => {
+    const consumeRateLimit = vi.fn(() => true);
+    const handler = createRunCommandHandler({
+      authenticate: async () => ({ userId: "user-1" }),
+      execute: vi.fn().mockResolvedValue({ id: "run-1", version: 1, state: {} }),
+      consumeRateLimit,
+    });
+
+    await handler(request({ type: "BEGIN_COMBAT_TURN", sequence: 1 }), "run-1");
+
+    expect(consumeRateLimit).toHaveBeenCalledWith("user-1", "run-1", "BEGIN_COMBAT_TURN");
+  });
+
+  it("returns a redacted conflict for expired combat windows", async () => {
+    const handler = createRunCommandHandler({
+      authenticate: async () => ({ userId: "user-1" }),
+      execute: vi.fn().mockRejectedValue(new Error("combat intervention window has ended at secret-time")),
+      consumeRateLimit: () => true,
+    });
+
+    const response = await handler(request({ type: "REROLL_COMBAT_DIE", sequence: 1, dieKind: "damage" }), "run-1");
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "run_state_conflict" });
+  });
 });

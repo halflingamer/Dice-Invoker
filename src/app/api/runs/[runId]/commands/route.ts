@@ -16,9 +16,13 @@ export async function POST(
       return session?.user?.id ? { userId: session.user.id } : null;
     },
     execute: (...arguments_) => getRunService().execute(...arguments_),
-    consumeRateLimit: (userId, targetRunId) =>
-      limiter.consume(`account:${userId}`, 180, 60_000) &&
-      limiter.consume(`run:${targetRunId}`, 60, 60_000),
+    consumeRateLimit: (userId, targetRunId, commandType) => {
+      const automatic = commandType === "BEGIN_COMBAT_TURN" || commandType === "RESOLVE_COMBAT_TURN";
+      const commandClass = automatic ? "automatic-combat" : "player-intent";
+      const runLimit = automatic ? 60 : 30;
+      return limiter.consume(`account:${userId}`, 180, 60_000) &&
+        limiter.consume(`run:${targetRunId}:${commandClass}`, runLimit, 60_000);
+    },
   });
   return handler(request, runId);
 }
