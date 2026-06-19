@@ -16,6 +16,8 @@ function readyToRollRun() {
   };
 }
 
+const at = (milliseconds: number) => ({ now: () => milliseconds });
+
 describe("run reducer", () => {
   it("starts before the first choice with an authoritative rolled map and D4 class", () => {
     const run = createRun({ seed: "server-seed", heroId: "squire" });
@@ -107,6 +109,51 @@ describe("run reducer", () => {
       xp: 60,
       pendingPromotionIds: [],
     });
+  });
+
+  it("runs combat through a server-timed automatic intervention window", () => {
+    const run = readyToRollRun();
+
+    expect(() => runCommandSchema.parse({
+      type: "BEGIN_COMBAT_TURN",
+      sequence: 1,
+      damageResult: 999,
+    })).toThrow();
+
+    const rolling = applyCommand(run, { type: "BEGIN_COMBAT_TURN", sequence: 1 }, at(1_000));
+    expect(rolling.phase).toBe("combat-intervention");
+    expect(rolling.combatTurn).toMatchObject({ turn: 1, interventionEndsAt: 3_500 });
+    expect(rolling.combatTurn?.damage.kind).toBe("damage");
+    expect(rolling.combatTurn?.defense.kind).toBe("defense");
+
+    expect(() => applyCommand(rolling, { type: "RESOLVE_COMBAT_TURN", sequence: 2 }, at(3_499))).toThrow(/intervention/i);
+
+    const rerolled = applyCommand(rolling, {
+      type: "REROLL_COMBAT_DIE",
+      sequence: 2,
+      dieKind: "damage",
+    }, at(2_000));
+    expect(rerolled.essence).toBe(rolling.essence - 1);
+    expect(() => applyCommand(rerolled, {
+      type: "REROLL_COMBAT_DIE",
+      sequence: 3,
+      dieKind: "damage",
+    }, at(2_100))).toThrow(/rerolled/i);
+
+    const resolved = applyCommand(rerolled, { type: "RESOLVE_COMBAT_TURN", sequence: 3 }, at(3_500));
+    expect(resolved.sequence).toBe(3);
+    expect(resolved.combatTurn).toBeNull();
+    expect(["ready-to-roll", "room-choice", "promotion", "complete"]).toContain(resolved.phase);
+  });
+
+  it("awards experience only after a combat victory", () => {
+    const run = { ...readyToRollRun(), enemyHp: 1 };
+    const rolling = applyCommand(run, { type: "BEGIN_COMBAT_TURN", sequence: 1 }, at(1_000));
+    const resolved = applyCommand(rolling, { type: "RESOLVE_COMBAT_TURN", sequence: 2 }, at(3_500));
+
+    expect(resolved.enemyHp).toBe(0);
+    expect(resolved.xp).toBeGreaterThan(0);
+    expect(["room-choice", "promotion", "complete"]).toContain(resolved.phase);
   });
 
   it("rejects reroll before roll and spends essence exactly once", () => {

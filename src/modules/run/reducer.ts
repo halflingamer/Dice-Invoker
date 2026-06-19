@@ -1,14 +1,19 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
+import { rollClassCombatDice, rollClassCombatDie, resolveTurn } from "@/modules/game-engine/combat";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { resolveEventChoice } from "@/modules/game-engine/events";
 import { chooseReward } from "@/modules/game-engine/rewards";
-import { applyPromotion } from "@/modules/game-engine/progression";
+import { applyPromotion, awardExperience, getPromotionChoices } from "@/modules/game-engine/progression";
 import { runCommandSchema, type RunCommand } from "./command-schema";
 import type { DieRoll, RunState } from "./state";
 
 const season = loadSeason(seasonOne);
 const diceById = new Map(season.dice.map((die) => [die.id, die]));
+const INTERVENTION_WINDOW_MS = 2_500;
+const ROOM_XP = { combat: 35, elite: 65, treasure: 20, merchant: 20, event: 30, rest: 20, boss: 100 } as const;
+
+type CommandContext = Readonly<{ now(): number }>;
 
 function requirePhase(state: RunState, phase: RunState["phase"]) {
   if (state.phase !== phase) {
@@ -39,7 +44,11 @@ function assertNever(value: never): never {
   throw new Error(`unsupported command: ${JSON.stringify(value)}`);
 }
 
-export function applyCommand(state: RunState, input: unknown): RunState {
+export function applyCommand(
+  state: RunState,
+  input: unknown,
+  context: CommandContext = { now: () => Date.now() },
+): RunState {
   const command = runCommandSchema.parse(input);
   assertSequence(state, command);
 
@@ -47,6 +56,112 @@ export function applyCommand(state: RunState, input: unknown): RunState {
     case "ACKNOWLEDGE_MAP_REVEAL":
       requirePhase(state, "map-reveal");
       return { ...state, phase: "room-choice", sequence: command.sequence };
+    case "BEGIN_COMBAT_TURN": {
+      requirePhase(state, "ready-to-roll");
+      if (state.enemyHp <= 0) throw new Error("combat enemy is already defeated");
+      const stage = season.classStages.find((candidate) => candidate.id === state.currentClassStageId);
+      if (!stage) throw new Error("current class stage is missing");
+      const stream = createNamedRollStream(state.seed, "combat", state.rngCursors.combat);
+      const dice = rollClassCombatDice(stage, (sides) => stream.roll(sides));
+      return {
+        ...state,
+        sequence: command.sequence,
+        phase: "combat-intervention",
+        combatRound: state.combatRound + 1,
+        combatTurn: {
+          turn: state.combatRound + 1,
+          ...dice,
+          interventionEndsAt: context.now() + INTERVENTION_WINDOW_MS,
+          rerolledDieKinds: [],
+        },
+        rngCursors: { ...state.rngCursors, combat: stream.cursor() },
+      };
+    }
+    case "REROLL_COMBAT_DIE": {
+      requirePhase(state, "combat-intervention");
+      if (!state.combatTurn) throw new Error("combat turn is missing");
+      if (context.now() >= state.combatTurn.interventionEndsAt) {
+        throw new Error("combat intervention window has ended");
+      }
+      if (state.essence < 1) throw new Error("not enough essence");
+      if (state.combatTurn.rerolledDieKinds.includes(command.dieKind)) {
+        throw new Error("combat die was already rerolled");
+      }
+      const stage = season.classStages.find((candidate) => candidate.id === state.currentClassStageId);
+      if (!stage) throw new Error("current class stage is missing");
+      const stream = createNamedRollStream(state.seed, "combat", state.rngCursors.combat);
+      const rerolled = rollClassCombatDie(stage, command.dieKind, (sides) => stream.roll(sides));
+      return {
+        ...state,
+        sequence: command.sequence,
+        essence: state.essence - 1,
+        combatTurn: {
+          ...state.combatTurn,
+          [command.dieKind]: rerolled,
+          rerolledDieKinds: [...state.combatTurn.rerolledDieKinds, command.dieKind],
+        },
+        rngCursors: { ...state.rngCursors, combat: stream.cursor() },
+      };
+    }
+    case "RESOLVE_COMBAT_TURN": {
+      requirePhase(state, "combat-intervention");
+      if (!state.combatTurn) throw new Error("combat turn is missing");
+      if (context.now() < state.combatTurn.interventionEndsAt) {
+        throw new Error("combat intervention window is still active");
+      }
+      const enemy = season.enemies.find((candidate) => candidate.id === state.enemyId);
+      if (!enemy) throw new Error("combat enemy is missing");
+      const result = resolveTurn({
+        heroHp: state.heroHp,
+        heroMaxHp: state.heroMaxHp,
+        enemyHp: state.enemyHp,
+        block: state.combatTurn.defense.value,
+        heroDamage: state.combatTurn.damage.value,
+        enemyDamage: enemy.damage,
+        healing: state.combatTurn.damage.healing + state.combatTurn.defense.healing,
+      });
+      if (result.outcome === "ongoing") {
+        return {
+          ...state,
+          sequence: command.sequence,
+          phase: "ready-to-roll",
+          heroHp: result.heroHp,
+          enemyHp: result.enemyHp,
+          combatTurn: null,
+        };
+      }
+      if (result.outcome === "defeat") {
+        return {
+          ...state,
+          sequence: command.sequence,
+          phase: "complete",
+          heroHp: 0,
+          enemyHp: result.enemyHp,
+          combatTurn: null,
+        };
+      }
+
+      const currentNode = state.currentRoomId
+        ? state.map.layers.flatMap((layer) => layer.nodes).find((node) => node.id === state.currentRoomId)
+        : undefined;
+      const progressed = awardExperience(
+        { currentStageId: state.currentClassStageId, xp: state.xp },
+        ROOM_XP[currentNode?.type ?? "combat"],
+      );
+      const promotionChoices = getPromotionChoices(progressed, season.classStages, { roomResolved: true });
+      const completedRun = currentNode?.type === "boss" || state.currentLayer === state.map.layers.length;
+      return {
+        ...state,
+        sequence: command.sequence,
+        phase: completedRun ? "complete" : promotionChoices.length > 0 ? "promotion" : "room-choice",
+        heroHp: result.heroHp,
+        enemyHp: 0,
+        combatTurn: null,
+        xp: progressed.xp,
+        pendingPromotionIds: promotionChoices.map((stage) => stage.id),
+        availableRoomIds: completedRun ? [] : [...(currentNode?.nextNodeIds ?? [])],
+      };
+    }
     case "ROLL_DICE": {
       requirePhase(state, "ready-to-roll");
       const rolled = rollEquippedDice(state);

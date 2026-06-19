@@ -36,6 +36,8 @@ export function createRun(input: CreateRunInput): RunState {
     heroMaxHp: hero.maxHp,
     enemyId: enemy.id,
     enemyHp: enemy.maxHp,
+    combatRound: 0,
+    combatTurn: null,
     essence: 2,
     maxEssence: 2,
     gold: 0,

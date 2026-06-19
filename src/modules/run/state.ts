@@ -2,6 +2,7 @@ import type { EventAuditRecord, EventOffer } from "@/modules/game-engine/events"
 import type { RunMap } from "@/modules/game-engine/map";
 import type { RandomChannel } from "@/modules/game-engine/rng";
 import type { RewardOffer } from "@/modules/game-engine/rewards";
+import type { ClassCombatDice, CombatDieKind } from "@/modules/game-engine/types";
 
 export type RunPhase =
   | "map-reveal"
@@ -23,6 +24,12 @@ export type DieRoll = Readonly<{
   locked: boolean;
 }>;
 
+export type CombatTurnState = Readonly<ClassCombatDice & {
+  turn: number;
+  interventionEndsAt: number;
+  rerolledDieKinds: readonly CombatDieKind[];
+}>;
+
 export type RunState = Readonly<{
   seed: string;
   sequence: number;
@@ -34,6 +41,8 @@ export type RunState = Readonly<{
   heroMaxHp: number;
   enemyId: string;
   enemyHp: number;
+  combatRound: number;
+  combatTurn: CombatTurnState | null;
   essence: number;
   maxEssence: number;
   gold: number;

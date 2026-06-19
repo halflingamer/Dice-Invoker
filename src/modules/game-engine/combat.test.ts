@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveTurn } from "./combat";
+import { rollClassCombatDice, resolveTurn } from "./combat";
+import { loadSeason } from "@/modules/content/content-loader";
+import { seasonOne } from "@/modules/content/season-1";
+
+const season = loadSeason(seasonOne);
 
 describe("resolveTurn", () => {
   it("applies block before incoming enemy damage", () => {
@@ -62,5 +66,19 @@ describe("resolveTurn", () => {
       blockRemaining: 0,
       outcome: "victory",
     });
+  });
+});
+
+describe("rollClassCombatDice", () => {
+  it("rolls one damage die and one defense die from the current class stage", () => {
+    const stage = season.classStages.find((candidate) => candidate.id === "squire-d4")!;
+    const results = [1, 4];
+
+    const rolled = rollClassCombatDice(stage, () => results.shift()!);
+
+    expect(rolled.damage).toMatchObject({ kind: "damage", sides: 4, faceIndex: 1 });
+    expect(rolled.damage.value).toBe(stage.faces[0]!.damage);
+    expect(rolled.defense).toMatchObject({ kind: "defense", sides: 4, faceIndex: 4 });
+    expect(rolled.defense.value).toBe(stage.faces[3]!.block);
   });
 });

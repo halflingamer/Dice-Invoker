@@ -1,4 +1,35 @@
-import type { TurnInput, TurnResult } from "./types";
+import type { ClassStage } from "@/modules/content/schema";
+import type { ClassCombatDice, CombatDieKind, CombatDieResult, TurnInput, TurnResult } from "./types";
+
+export function rollClassCombatDie(
+  stage: ClassStage,
+  kind: CombatDieKind,
+  roll: (sides: number) => number,
+): CombatDieResult {
+  const faceIndex = roll(stage.sides);
+  if (!Number.isSafeInteger(faceIndex) || faceIndex < 1 || faceIndex > stage.sides) {
+    throw new Error("class die roll is outside its faces");
+  }
+  const face = stage.faces[faceIndex - 1]!;
+  return {
+    kind,
+    sides: stage.sides,
+    faceIndex,
+    label: face.label,
+    value: kind === "damage" ? face.damage : face.block,
+    healing: face.healing,
+  };
+}
+
+export function rollClassCombatDice(
+  stage: ClassStage,
+  roll: (sides: number) => number,
+): ClassCombatDice {
+  return {
+    damage: rollClassCombatDie(stage, "damage", roll),
+    defense: rollClassCombatDie(stage, "defense", roll),
+  };
+}
 
 function assertNonNegativeInteger(label: string, value: number) {
   if (!Number.isSafeInteger(value) || value < 0) {
