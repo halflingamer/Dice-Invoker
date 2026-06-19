@@ -27,7 +27,14 @@ export function createRun(input: CreateRunInput): RunState {
     enemyHp: enemy.maxHp,
     essence: 2,
     maxEssence: 2,
+    gold: 0,
+    hasInsurance: false,
     equippedDieIds: [...hero.startingDiceIds],
     rolls: [],
+    availableRoomIds: [],
+    currentRoomId: "room-1-1",
+    rewardOffer: null,
+    eventOffer: null,
+    eventAuditTrail: [],
   };
 }

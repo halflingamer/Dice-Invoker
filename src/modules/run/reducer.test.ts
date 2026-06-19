@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { seasonOne } from "@/modules/content/season-1";
+import { createEventOffer } from "@/modules/game-engine/events";
+import { createRewardOffer } from "@/modules/game-engine/rewards";
 import { runCommandSchema } from "./command-schema";
 import { createRun } from "./create-run";
 import { applyCommand } from "./reducer";
@@ -44,5 +47,29 @@ describe("run reducer", () => {
     expect(() =>
       runCommandSchema.parse({ type: "ROLL_DICE", sequence: 1, finalScore: 999_999 }),
     ).toThrow();
+  });
+
+  it("accepts only rooms exposed by the official state", () => {
+    const run = { ...createRun({ seed: "server-seed", heroId: "squire" }), phase: "room-choice" as const, availableRoomIds: ["room-2-1", "room-2-2"] };
+
+    expect(() => applyCommand(run, { type: "CHOOSE_ROOM", sequence: 1, roomId: "room-9-9" })).toThrow(/available/i);
+    expect(applyCommand(run, { type: "CHOOSE_ROOM", sequence: 1, roomId: "room-2-2" }).currentRoomId).toBe("room-2-2");
+  });
+
+  it("accepts only reward ids present in the official offer", () => {
+    const base = createRun({ seed: "server-seed", heroId: "squire" });
+    const rewardOffer = createRewardOffer(base.seed, base.rngCursor, seasonOne.dice.map((die) => die.id));
+    const run = { ...base, phase: "reward" as const, rewardOffer };
+
+    expect(() => applyCommand(run, { type: "CHOOSE_REWARD", sequence: 1, rewardId: "reward-forged" })).toThrow(/offered/i);
+  });
+
+  it("accepts only event option ids present in the official offer", () => {
+    const base = createRun({ seed: "server-seed", heroId: "squire" });
+    const event = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance")!;
+    const eventOffer = createEventOffer(event, base.seed, base.rngCursor);
+    const run = { ...base, phase: "event" as const, eventOffer, rngCursor: eventOffer.rngCursor };
+
+    expect(() => applyCommand(run, { type: "CHOOSE_EVENT_OPTION", sequence: 1, optionId: "event-forged" })).toThrow(/offered/i);
   });
 });

@@ -1,6 +1,8 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
 import { createRollStream } from "@/modules/game-engine/rng";
+import { resolveEventChoice } from "@/modules/game-engine/events";
+import { chooseReward } from "@/modules/game-engine/rewards";
 import { runCommandSchema, type RunCommand } from "./command-schema";
 import type { DieRoll, RunState } from "./state";
 
@@ -82,14 +84,53 @@ export function applyCommand(state: RunState, input: unknown): RunState {
     case "ACTIVATE_RESULTS":
       requirePhase(state, "rolled");
       throw new Error("result activation is introduced with combat orchestration");
-    case "CHOOSE_ROOM":
+    case "CHOOSE_ROOM": {
       requirePhase(state, "room-choice");
-      throw new Error("room selection is introduced with the map module");
-    case "CHOOSE_REWARD":
+      if (!state.availableRoomIds.includes(command.roomId)) throw new Error("room is not available");
+      return {
+        ...state,
+        sequence: command.sequence,
+        phase: "ready-to-roll",
+        currentRoomId: command.roomId,
+        availableRoomIds: [],
+      };
+    }
+    case "CHOOSE_REWARD": {
       requirePhase(state, "reward");
-      throw new Error("reward selection is introduced with the reward module");
-    case "CHOOSE_EVENT_OPTION":
-      throw new Error("event choices are introduced with the event module");
+      if (!state.rewardOffer) throw new Error("no reward is currently offered");
+      const reward = chooseReward(state.rewardOffer, command.rewardId);
+      return {
+        ...state,
+        sequence: command.sequence,
+        phase: "room-choice",
+        rewardOffer: null,
+        equippedDieIds: state.equippedDieIds.includes(reward.dieId)
+          ? state.equippedDieIds
+          : [...state.equippedDieIds, reward.dieId],
+      };
+    }
+    case "CHOOSE_EVENT_OPTION": {
+      requirePhase(state, "event");
+      if (!state.eventOffer) throw new Error("no event option is currently offered");
+      const result = resolveEventChoice({
+        offer: state.eventOffer,
+        offerId: command.optionId,
+        seed: state.seed,
+        rngCursor: state.rngCursor,
+        gold: state.gold,
+      });
+      return {
+        ...state,
+        sequence: command.sequence,
+        phase: "room-choice",
+        eventOffer: null,
+        gold: result.gold,
+        hasInsurance: state.hasInsurance || result.hasInsurance,
+        heroHp: Math.max(0, Math.min(state.heroMaxHp, state.heroHp + result.hpDelta)),
+        rngCursor: result.rngCursor,
+        eventAuditTrail: [...state.eventAuditTrail, result.audit],
+      };
+    }
     default:
       return assertNever(command);
   }
