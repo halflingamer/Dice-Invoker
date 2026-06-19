@@ -1,0 +1,53 @@
+name: Publish Hostinger Preview
+
+on:
+  push:
+    branches:
+      - feature/dice-invoker-vertical-slice
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hostinger-preview
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - name: Checkout trusted source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git clone --depth 1 --branch "${GITHUB_REF_NAME}" "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" source
+
+      - name: Install locked dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Test static export rules
+        working-directory: source
+        run: npm run test:hostinger
+
+      - name: Build audited static preview
+        working-directory: source
+        run: npm run build:hostinger
+
+      - name: Publish isolated static branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd source/out
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b hostinger-preview
+          git add -A
+          git commit -m "deploy: publish Hostinger preview"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin hostinger-preview
