@@ -8,6 +8,7 @@ describe("loadSeason", () => {
 
     expect(season.guardians[0]).toMatchObject({
       id: "caretaker-slime",
+      name: "Slime Zelador",
       unlock: { kind: "starter" },
     });
     expect(season.evolutionStages.some((stage) => stage.sides === 20)).toBe(true);
