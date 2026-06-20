@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { RunMap as RunMapModel } from "@/modules/game-engine/map";
 import { LocationDie, type LocationState } from "./LocationDie";
 
@@ -27,6 +27,7 @@ export function RunMap({
   currentRoomId: string | null;
   onChoose(id: string): void;
 }>) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const available = useMemo(() => new Set(availableRoomIds), [availableRoomIds]);
   const visited = useMemo(() => new Set(visitedRoomIds), [visitedRoomIds]);
   const currentLayer = currentRoomId
@@ -43,6 +44,25 @@ export function RunMap({
     return result;
   }, [map]);
 
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const reachable = scroller.querySelector<HTMLElement>(".location-die.is-reachable");
+    if (!reachable) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    const scrollerRect = scroller.getBoundingClientRect();
+    const reachableRect = reachable.getBoundingClientRect();
+    if (scrollerRect.height === 0 || reachableRect.height === 0) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    scroller.scrollTop += reachableRect.top
+      - scrollerRect.top
+      - (scrollerRect.height - reachableRect.height) / 2;
+  }, [availableRoomIds, currentRoomId, map]);
+
   const stateFor = (id: string, layerIndex: number): LocationState => {
     if (id === currentRoomId) return "selected";
     if (visited.has(id)) return "completed";
@@ -57,7 +77,7 @@ export function RunMap({
         <h2>Dados de Local</h2>
         <span>{currentLayer}/10</span>
       </header>
-      <div className="route-scroll">
+      <div className="route-scroll" ref={scrollRef}>
         <div className="route-graph" style={{ width: MAP_WIDTH, height }}>
           <svg className="route-lines" viewBox={`0 0 ${MAP_WIDTH} ${height}`} aria-hidden="true">
             {map.layers.flatMap((layer) => layer.nodes.flatMap((node) => {

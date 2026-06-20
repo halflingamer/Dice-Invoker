@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RunMap as RunMapModel } from "@/modules/game-engine/map";
 import { RunMap } from "./RunMap";
@@ -25,6 +25,28 @@ const map: RunMapModel = {
 };
 
 describe("RunMap", () => {
+  it("opens at the reachable starting dice on a bottom-up map", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 816 });
+    try {
+      const { container } = render(
+        <RunMap
+          map={map}
+          availableRoomIds={["room-1-1", "room-1-2"]}
+          visitedRoomIds={[]}
+          currentRoomId={null}
+          onChoose={() => undefined}
+        />,
+      );
+
+      expect((container.querySelector(".route-scroll") as HTMLElement).scrollTop).toBe(816);
+    } finally {
+      cleanup();
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, "scrollHeight", descriptor);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+    }
+  });
+
   it("renders symbols, connections, and accessible route states", () => {
     const { container } = render(
       <RunMap

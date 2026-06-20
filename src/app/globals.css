@@ -30,7 +30,7 @@
 .location-die.is-lost{filter:grayscale(1);opacity:.28}.location-die.is-locked{opacity:.58}
 .location-die.location-elite{color:#5d1111}.location-die.location-boss{width:66px;height:61px;border-color:#df5d4d;background:linear-gradient(145deg,#f1c36d,#a53d31);color:#2b0908}
 @keyframes location-pulse{50%{filter:drop-shadow(0 0 12px #f3c14f)}}
-@media(max-width:900px){.hero-sheet{display:none}.run-map{display:block;order:2;max-height:220px;border-width:2px}.battle-column{order:1}.route-scroll{height:168px}.route-graph{transform:scale(.82);transform-origin:top center}.game-shell{grid-template-columns:1fr}}
+@media(max-width:900px){.hero-sheet{display:none}.run-map{display:block;order:2;max-height:220px;border-width:2px}.battle-column{order:1}.route-scroll{height:168px}.game-shell{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.location-die{animation:none!important;transition:none!important}}
 
 /* Automatic combat dice */

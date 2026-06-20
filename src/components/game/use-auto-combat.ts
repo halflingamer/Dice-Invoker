@@ -52,6 +52,8 @@ export function useAutoCombat({
   useEffect(() => { onVictoryRef.current = onVictory; }, [onVictory]);
 
   useEffect(() => {
+    // A new encounter is a state-machine boundary: every combat resource must reset atomically.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTurn(1);
     setEnemyHp(initialEnemyHp);
     setEssence(2);
