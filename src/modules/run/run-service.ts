@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { z } from "zod";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { Prisma } from "@/generated/prisma/client";
+import { RUN_ITEMS } from "@/modules/game-engine/economy";
 import { createSeedCipher } from "@/modules/security/seed-cipher";
 import type { RunCommand } from "./command-schema";
 import { createRun } from "./create-run";
@@ -22,6 +24,70 @@ type Dependencies = Readonly<{
   seedSecret: Buffer;
 }>;
 
+const persistedIdSchema = z.string().regex(/^[a-z0-9-]+$/).max(80);
+const safeNonNegativeIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const safeIntegerSchema = z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
+const runItemIdSchema = persistedIdSchema.refine((itemId) => Object.hasOwn(RUN_ITEMS, itemId));
+const merchantOptionSchema = z.object({ offerId: persistedIdSchema, itemId: runItemIdSchema }).strict();
+const merchantOfferSchema = z.object({
+  options: z.tuple([merchantOptionSchema, merchantOptionSchema, merchantOptionSchema]),
+  rngCursor: safeNonNegativeIntegerSchema,
+}).strict();
+const treasurePayloadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("gold"), amount: safeNonNegativeIntegerSchema }).strict(),
+  z.object({ kind: z.literal("item"), itemId: runItemIdSchema }).strict(),
+  z.object({ kind: z.literal("essence"), amount: safeNonNegativeIntegerSchema }).strict(),
+]);
+const treasureOptionSchema = z.object({ offerId: persistedIdSchema, payload: treasurePayloadSchema }).strict();
+const treasureOfferSchema = z.object({
+  options: z.tuple([treasureOptionSchema, treasureOptionSchema, treasureOptionSchema]),
+  rngCursor: safeNonNegativeIntegerSchema,
+}).strict().superRefine((offer, context) => {
+  const kinds = new Set(offer.options.map((option) => option.payload.kind));
+  if (kinds.size !== 3) {
+    context.addIssue({ code: "custom", message: "treasure reward kinds must be unique" });
+  }
+});
+const eventOptionSchema = z.object({
+  offerId: persistedIdSchema,
+  optionId: persistedIdSchema,
+  label: z.string().min(1).max(200),
+}).strict();
+const eventOfferSchema = z.object({
+  eventId: persistedIdSchema,
+  options: z.array(eventOptionSchema).min(1).max(12),
+  rngCursor: safeNonNegativeIntegerSchema,
+}).strict();
+const eventAuditSchema = z.object({
+  eventId: persistedIdSchema,
+  optionId: persistedIdSchema,
+  outcome: z.enum(["purchased", "ignored", "success", "failure", "resolved"]),
+}).strict();
+const eventResultSchema = z.object({
+  gold: safeNonNegativeIntegerSchema,
+  hasInsurance: z.boolean(),
+  hpDelta: safeIntegerSchema,
+  rngCursor: safeNonNegativeIntegerSchema,
+  audit: eventAuditSchema,
+}).strict();
+const pendingRoomSchema = z.union([
+  z.null(),
+  z.object({ kind: z.literal("merchant"), offer: merchantOfferSchema }).strict(),
+  z.object({ kind: z.literal("treasure"), offer: treasureOfferSchema }).strict(),
+  z.object({
+    kind: z.literal("event"),
+    offer: eventOfferSchema,
+    result: eventResultSchema.nullable(),
+  }).strict().superRefine((room, context) => {
+    if (room.result && room.result.audit.eventId !== room.offer.eventId) {
+      context.addIssue({ code: "custom", message: "event result does not match offer" });
+    }
+    if (room.result && !room.offer.options.some((option) => option.optionId === room.result?.audit.optionId)) {
+      context.addIssue({ code: "custom", message: "event result option was not offered" });
+    }
+  }),
+]);
+
 function withoutSeed(state: RunState): PersistedRunState {
   const persisted: MutablePartialRunState = { ...state };
   delete persisted.seed;
@@ -37,28 +103,24 @@ function parsePersistedState(value: Prisma.JsonValue): PersistedRunState {
     throw new Error("stored run state is invalid");
   }
   const stored = value as Record<string, unknown>;
-  const stringArray = (key: string): readonly string[] => {
-    const candidate = stored[key];
-    if (candidate === undefined) return [];
-    if (!Array.isArray(candidate) || !candidate.every((item) => typeof item === "string")) {
-      throw new Error("stored run state is invalid");
-    }
-    return candidate;
+  const parseField = <Output>(schema: z.ZodType<Output>, candidate: unknown, fallback: Output): Output => {
+    const parsed = schema.safeParse(candidate === undefined ? fallback : candidate);
+    if (!parsed.success) throw new Error("stored run state is invalid");
+    return parsed.data;
   };
-  const pendingRoom = stored.pendingRoom;
-  if (
-    pendingRoom !== undefined
-    && pendingRoom !== null
-    && (typeof pendingRoom !== "object" || Array.isArray(pendingRoom))
-  ) {
+  const inventory = parseField(z.array(runItemIdSchema), stored.inventory, []);
+  const handledRoomCommandIds = parseField(z.array(persistedIdSchema), stored.handledRoomCommandIds, []);
+  const purchasedMerchantOfferIds = parseField(z.array(persistedIdSchema), stored.purchasedMerchantOfferIds, []);
+  const pendingRoom = pendingRoomSchema.safeParse(stored.pendingRoom === undefined ? null : stored.pendingRoom);
+  if (!pendingRoom.success) {
     throw new Error("stored run state is invalid");
   }
   return {
     ...stored,
-    inventory: stringArray("inventory"),
-    pendingRoom: pendingRoom ?? null,
-    handledRoomCommandIds: stringArray("handledRoomCommandIds"),
-    purchasedMerchantOfferIds: stringArray("purchasedMerchantOfferIds"),
+    inventory,
+    pendingRoom: pendingRoom.data,
+    handledRoomCommandIds,
+    purchasedMerchantOfferIds,
   } as unknown as PersistedRunState;
 }
 

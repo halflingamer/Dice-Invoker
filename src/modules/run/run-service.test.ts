@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { createSeedCipher } from "@/modules/security/seed-cipher";
-import { createMerchantOffer } from "@/modules/game-engine/rewards";
+import { createEventOffer } from "@/modules/game-engine/events";
+import { createMerchantOffer, createTreasureOffer } from "@/modules/game-engine/rewards";
 import { RUN_ITEMS } from "@/modules/game-engine/economy";
+import { seasonOne } from "@/modules/content/season-1";
 import { createRun } from "./create-run";
 import { createRunService } from "./run-service";
 import type { RunState } from "./state";
@@ -165,5 +167,85 @@ describe("run service interactive commands", () => {
     expect(response.state.purchasedMerchantOfferIds).toEqual([]);
     expect(response.state.pendingRoom?.kind).toBe("merchant");
     expect(response.state).not.toHaveProperty("seed");
+  });
+
+  it("rejects a forged persisted inventory item without exposing the seed", async () => {
+    const base = createRun({ seed: "private-inventory-seed", heroId: "squire" });
+    const forged = { ...base, inventory: ["forged-item"] } as unknown as RunState;
+    const { service } = serviceHarness(forged);
+
+    const execution = service.execute("user-1", "run-1", "forged-inventory-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    });
+
+    await expect(execution).rejects.toThrow("stored run state is invalid");
+    await expect(execution).rejects.not.toThrow(/private-inventory-seed/);
+  });
+
+  it("rejects malformed persisted room command ids", async () => {
+    const base = createRun({ seed: "invalid-command-id-seed", heroId: "squire" });
+    const malformed = {
+      ...base,
+      handledRoomCommandIds: ["UPPERCASE"],
+      purchasedMerchantOfferIds: ["x".repeat(81)],
+    } as unknown as RunState;
+    const { service } = serviceHarness(malformed);
+
+    await expect(service.execute("user-1", "run-1", "invalid-id-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    })).rejects.toThrow("stored run state is invalid");
+  });
+
+  it("rejects a persisted merchant pending room without a valid offer", async () => {
+    const base = createRun({ seed: "invalid-pending-seed", heroId: "squire" });
+    const malformed = { ...base, pendingRoom: { kind: "merchant" } } as unknown as RunState;
+    const { service } = serviceHarness(malformed);
+
+    await expect(service.execute("user-1", "run-1", "invalid-pending-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    })).rejects.toThrow("stored run state is invalid");
+  });
+
+  it("rejects a treasure offer without one option of each reward kind", async () => {
+    const base = createRun({ seed: "invalid-treasure-seed", heroId: "squire" });
+    const offer = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const goldPayload = offer.options[0].payload;
+    const malformed = {
+      ...base,
+      pendingRoom: {
+        kind: "treasure",
+        offer: { ...offer, options: offer.options.map((option) => ({ ...option, payload: goldPayload })) },
+      },
+    } as unknown as RunState;
+    const { service } = serviceHarness(malformed);
+
+    await expect(service.execute("user-1", "run-1", "invalid-treasure-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    })).rejects.toThrow("stored run state is invalid");
+  });
+
+  it("rejects an event result for an option that was not offered", async () => {
+    const base = createRun({ seed: "invalid-event-seed", heroId: "squire" });
+    const event = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance")!;
+    const offer = createEventOffer(event, base.seed, 0);
+    const malformed = {
+      ...base,
+      pendingRoom: {
+        kind: "event",
+        offer,
+        result: {
+          gold: base.gold,
+          hasInsurance: false,
+          hpDelta: 0,
+          rngCursor: offer.rngCursor,
+          audit: { eventId: offer.eventId, optionId: "not-offered", outcome: "ignored" },
+        },
+      },
+    } as unknown as RunState;
+    const { service } = serviceHarness(malformed);
+
+    await expect(service.execute("user-1", "run-1", "invalid-event-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    })).rejects.toThrow("stored run state is invalid");
   });
 });
