@@ -70,4 +70,64 @@ describe("loadSeason", () => {
         : stage),
     })).toThrow(/cycle/i);
   });
+
+  it("derives stable legacy aliases when canonical stages are reordered", () => {
+    const season = loadSeason({
+      ...seasonOne,
+      evolutionStages: [...seasonOne.evolutionStages].reverse(),
+    });
+
+    expect(season.classStages.find((stage) => stage.id === "squire-d4")?.heroId).toBe("squire");
+    expect(season.classStages.find((stage) => stage.id === "guardian-d6")?.nextStageIds).toEqual([
+      "paladin-d8",
+      "bastion-d8",
+    ]);
+  });
+
+  it("rejects collisions in generated compatibility aliases", () => {
+    expect(() => loadSeason({
+      ...seasonOne,
+      guardians: [
+        ...seasonOne.guardians,
+        { ...seasonOne.guardians[0], id: "squire", name: "Guardião Conflitante" },
+      ],
+    })).toThrow(/duplicate compatibility guardian id/i);
+  });
+
+  it("rejects phases outside exact campaign order", () => {
+    expect(() => loadSeason({ ...seasonOne, phases: [...seasonOne.phases].reverse() }))
+      .toThrow(/phase order/i);
+  });
+
+  it("rejects malformed phase room escalation", () => {
+    expect(() => loadSeason({
+      ...seasonOne,
+      phases: seasonOne.phases.map((phase, index) => index === 2 ? { ...phase, roomCount: 9 } : phase),
+    })).toThrow(/room count/i);
+  });
+
+  it("rejects malformed phase difficulty escalation", () => {
+    expect(() => loadSeason({
+      ...seasonOne,
+      phases: seasonOne.phases.map((phase, index) => index === 2 ? { ...phase, difficulty: 7 } : phase),
+    })).toThrow(/difficulty/i);
+  });
+
+  it("rejects reused phase bosses", () => {
+    expect(() => loadSeason({
+      ...seasonOne,
+      phases: seasonOne.phases.map((phase, index) => index === 1
+        ? { ...phase, bossInvaderId: seasonOne.phases[0].bossInvaderId }
+        : phase),
+    })).toThrow(/unique boss/i);
+  });
+
+  it("rejects a phase target that is not a boss", () => {
+    expect(() => loadSeason({
+      ...seasonOne,
+      phases: seasonOne.phases.map((phase, index) => index === 0
+        ? { ...phase, bossInvaderId: "torch-bearer" }
+        : phase),
+    })).toThrow(/boss rank/i);
+  });
 });

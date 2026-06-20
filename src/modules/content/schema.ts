@@ -95,62 +95,79 @@ const seasonSourceSchema = z.object({
 
 // Deprecated runtime views keep pre-migration consumers compiling without duplicating source content.
 export const seasonSchema = seasonSourceSchema.transform((season) => {
-  const legacyStageIds = [
-    "squire-d4",
-    "warrior-d6", "guardian-d6",
-    "duelist-d8", "knight-d8", "paladin-d8", "bastion-d8",
-    "blade-dancer-d10", "riposte-master-d10", "royal-lancer-d10", "iron-marshal-d10",
-    "sun-templar-d10", "oathkeeper-d10", "fortress-d10", "thorn-warden-d10",
-    "storm-of-steel-d12", "fate-duelist-d12", "perfect-counter-d12", "mirror-blade-d12",
-    "dragon-lancer-d12", "kings-vanguard-d12", "adamant-general-d12", "war-citadel-d12",
-    "solar-paragon-d12", "dawn-saint-d12", "eternal-oath-d12", "mercy-crown-d12",
-    "living-fortress-d12", "world-shield-d12", "iron-thorns-d12", "retribution-king-d12",
-  ];
+  const guardianLegacyIds: Readonly<Record<string, string>> = {
+    "caretaker-slime": "squire",
+  };
+  const stageLegacyIds: Readonly<Record<string, string>> = {
+    "caretaker-slime-d4": "squire-d4",
+    "caretaker-slime-d6-1": "warrior-d6", "caretaker-slime-d6-2": "guardian-d6",
+    "caretaker-slime-d8-1": "duelist-d8", "caretaker-slime-d8-2": "knight-d8",
+    "caretaker-slime-d8-3": "paladin-d8", "caretaker-slime-d8-4": "bastion-d8",
+    "caretaker-slime-d10-1": "blade-dancer-d10", "caretaker-slime-d10-2": "riposte-master-d10",
+    "caretaker-slime-d10-3": "royal-lancer-d10", "caretaker-slime-d10-4": "iron-marshal-d10",
+    "caretaker-slime-d10-5": "sun-templar-d10", "caretaker-slime-d10-6": "oathkeeper-d10",
+    "caretaker-slime-d10-7": "fortress-d10", "caretaker-slime-d10-8": "thorn-warden-d10",
+    "caretaker-slime-d12-1": "storm-of-steel-d12", "caretaker-slime-d12-2": "fate-duelist-d12",
+    "caretaker-slime-d12-3": "perfect-counter-d12", "caretaker-slime-d12-4": "mirror-blade-d12",
+    "caretaker-slime-d12-5": "dragon-lancer-d12", "caretaker-slime-d12-6": "kings-vanguard-d12",
+    "caretaker-slime-d12-7": "adamant-general-d12", "caretaker-slime-d12-8": "war-citadel-d12",
+    "caretaker-slime-d12-9": "solar-paragon-d12", "caretaker-slime-d12-10": "dawn-saint-d12",
+    "caretaker-slime-d12-11": "eternal-oath-d12", "caretaker-slime-d12-12": "mercy-crown-d12",
+    "caretaker-slime-d12-13": "living-fortress-d12", "caretaker-slime-d12-14": "world-shield-d12",
+    "caretaker-slime-d12-15": "iron-thorns-d12", "caretaker-slime-d12-16": "retribution-king-d12",
+  };
+  const invaderLegacyIds: Readonly<Record<string, string>> = { "torch-bearer": "receipt-slime" };
+  const guardianLegacyId = (id: string) => guardianLegacyIds[id] ?? id;
+  const stageLegacyId = (id: string) => stageLegacyIds[id] ?? id;
+  const invaderLegacyId = (id: string) => invaderLegacyIds[id] ?? id;
+  const assertUniqueAliases = (label: string, ids: readonly string[]) => {
+    if (new Set(ids).size !== ids.length) throw new Error(`duplicate compatibility ${label} id`);
+  };
   const compatibleStages = season.evolutionStages.filter(
     (stage): stage is typeof stage & { sides: 4 | 6 | 8 | 10 | 12 } => stage.sides !== 20,
   );
-  const legacyIdByCanonicalId = new Map(
-    compatibleStages.map((stage, index) => [stage.id, legacyStageIds[index] ?? stage.id]),
-  );
+  assertUniqueAliases("guardian", season.guardians.map(({ id }) => guardianLegacyId(id)));
+  assertUniqueAliases("class stage", compatibleStages.map(({ id }) => stageLegacyId(id)));
+  assertUniqueAliases("enemy", season.invaders.map(({ id }) => invaderLegacyId(id)));
 
   return {
   ...season,
   heroes: season.guardians.map((guardian) => ({
-    id: guardian.unlock.kind === "starter" ? "squire" : guardian.id,
-    name: guardian.unlock.kind === "starter" ? "Escudeiro" : guardian.name,
+    id: guardianLegacyId(guardian.id),
+    name: guardian.id === "caretaker-slime" ? "Escudeiro" : guardian.name,
     class: "guardian" as const,
     rarity: guardian.rarity,
-    maxHp: guardian.unlock.kind === "starter" ? 24 : guardian.maxHp,
-    startingDiceIds: guardian.unlock.kind === "starter"
+    maxHp: guardian.id === "caretaker-slime" ? 24 : guardian.maxHp,
+    startingDiceIds: guardian.id === "caretaker-slime"
       ? ["rusty-sword", "wooden-shield"]
       : guardian.startingDiceIds,
-    rootClassStageId: legacyIdByCanonicalId.get(guardian.rootEvolutionStageId) ?? guardian.rootEvolutionStageId,
+    rootClassStageId: stageLegacyId(guardian.rootEvolutionStageId),
     unlock: guardian.unlock,
   })),
   classStages: compatibleStages
     .map((stage) => ({
-    id: legacyIdByCanonicalId.get(stage.id) ?? stage.id,
-    heroId: "squire",
+    id: stageLegacyId(stage.id),
+    heroId: guardianLegacyId(stage.guardianId),
     name: stage.name,
     sides: stage.sides,
     xpThreshold: stage.xpThreshold,
     role: stage.role,
     nextStageIds: stage.nextStageIds
-      .map((id) => legacyIdByCanonicalId.get(id))
-      .filter((id): id is string => id !== undefined),
+      .filter((id) => season.evolutionStages.find((candidate) => candidate.id === id)?.sides !== 20)
+      .map(stageLegacyId),
     aiWeights: stage.role === "assault" ? { attack: 75, defense: 20, magic: 5 }
       : stage.role === "defense" ? { attack: 25, defense: 70, magic: 5 }
       : { attack: 45, defense: 45, magic: 10 },
     faces: Array.from({ length: stage.sides }, (_, index) => ({
-      id: `${legacyIdByCanonicalId.get(stage.id) ?? stage.id}-face-${index + 1}`,
+      id: `${stageLegacyId(stage.id)}-face-${index + 1}`,
       label: `${stage.name} ${index + 1}`,
       damage: Math.floor(index / 2) + 1,
       block: Math.floor(index / 2) + 1 + stage.naturalDefense,
       healing: 0,
     })),
     })),
-  enemies: season.invaders.map((invader, index) => ({
-    id: index === 0 ? "receipt-slime" : invader.id,
+  enemies: season.invaders.map((invader) => ({
+    id: invaderLegacyId(invader.id),
     name: invader.name,
     rank: invader.rank,
     maxHp: invader.maxHp,

@@ -17,6 +17,7 @@ export function loadSeason(input: unknown): Readonly<Season> {
   const dieIds = new Set(season.dice.map(({ id }) => id));
   const guardianIds = new Set(season.guardians.map(({ id }) => id));
   const invaderIds = new Set(season.invaders.map(({ id }) => id));
+  const invadersById = new Map(season.invaders.map((invader) => [invader.id, invader]));
   const stagesById = new Map(season.evolutionStages.map((stage) => [stage.id, stage]));
 
   for (const guardian of season.guardians) {
@@ -27,9 +28,18 @@ export function loadSeason(input: unknown): Readonly<Season> {
       throw new Error(`guardian references unknown root evolution stage: ${guardian.rootEvolutionStageId}`);
     }
   }
-  for (const phase of season.phases) {
+  const phaseBossIds = season.phases.map(({ bossInvaderId }) => bossInvaderId);
+  if (new Set(phaseBossIds).size !== phaseBossIds.length) throw new Error("phases require unique boss invaders");
+  for (const [offset, phase] of season.phases.entries()) {
+    const expectedIndex = offset + 1;
+    if (phase.index !== expectedIndex) throw new Error("phase order must match indexes 1 through 7");
+    if (phase.roomCount !== offset + 3) throw new Error(`phase ${phase.index} has invalid room count`);
+    if (phase.difficulty !== expectedIndex) throw new Error(`phase ${phase.index} has invalid difficulty`);
     if (!invaderIds.has(phase.bossInvaderId)) {
       throw new Error(`phase references unknown boss invader: ${phase.bossInvaderId}`);
+    }
+    if (invadersById.get(phase.bossInvaderId)?.rank !== "boss") {
+      throw new Error(`phase ${phase.index} invader must have boss rank`);
     }
   }
 
