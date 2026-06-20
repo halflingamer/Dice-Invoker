@@ -36,7 +36,30 @@ function parsePersistedState(value: Prisma.JsonValue): PersistedRunState {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("stored run state is invalid");
   }
-  return value as unknown as PersistedRunState;
+  const stored = value as Record<string, unknown>;
+  const stringArray = (key: string): readonly string[] => {
+    const candidate = stored[key];
+    if (candidate === undefined) return [];
+    if (!Array.isArray(candidate) || !candidate.every((item) => typeof item === "string")) {
+      throw new Error("stored run state is invalid");
+    }
+    return candidate;
+  };
+  const pendingRoom = stored.pendingRoom;
+  if (
+    pendingRoom !== undefined
+    && pendingRoom !== null
+    && (typeof pendingRoom !== "object" || Array.isArray(pendingRoom))
+  ) {
+    throw new Error("stored run state is invalid");
+  }
+  return {
+    ...stored,
+    inventory: stringArray("inventory"),
+    pendingRoom: pendingRoom ?? null,
+    handledRoomCommandIds: stringArray("handledRoomCommandIds"),
+    purchasedMerchantOfferIds: stringArray("purchasedMerchantOfferIds"),
+  } as unknown as PersistedRunState;
 }
 
 export function createRunService({ prisma, seedSecret }: Dependencies) {
@@ -118,6 +141,16 @@ export function createRunService({ prisma, seedSecret }: Dependencies) {
       } catch (error) {
         const concurrentResult = await findIdempotent(runId, idempotencyKey);
         if (concurrentResult) return concurrentResult;
+        if (error instanceof Error && /run version conflict/i.test(error.message) && "commandId" in command) {
+          const latestRun = await prisma.run.findFirst({ where: { id: runId, ownerId } });
+          if (latestRun) {
+            const latestSeed = seedCipher.decrypt(latestRun.seedCiphertext);
+            const latestState: RunState = { seed: latestSeed, ...parsePersistedState(latestRun.stateJson) };
+            if (latestState.handledRoomCommandIds.includes(command.commandId)) {
+              return { id: latestRun.id, version: latestRun.version, state: withoutSeed(latestState) };
+            }
+          }
+        }
         throw error;
       }
     },
