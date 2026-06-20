@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CombatStage } from "./CombatStage";
 import type { RunMap } from "@/modules/game-engine/map";
@@ -8,6 +8,7 @@ vi.mock("./PhaserBattle", () => ({
 }));
 
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
@@ -37,6 +38,33 @@ it("starts automatic damage and defense rolls after choosing combat", () => {
 const singleRoomMap = (type: "elite" | "boss"): RunMap => ({
   rngCursor: 0,
   layers: [{ index: 1, nodes: [{ id: `room-${type}`, type, nextNodeIds: [] }] }],
+});
+
+const interactiveRoomMap = (type: "merchant" | "treasure" | "event"): RunMap => ({
+  rngCursor: 0,
+  layers: [
+    {
+      index: 1,
+      nodes: [{ id: `room-${type}`, type, nextNodeIds: ["room-next"] }],
+    },
+    {
+      index: 2,
+      nodes: [{ id: "room-next", type: "combat", nextNodeIds: [] }],
+    },
+  ],
+});
+
+it.each([
+  ["merchant", "Mercador Tributário"],
+  ["treasure", "Cofre dos Dados"],
+  ["event", "Goblin Vendedor de Seguro"],
+] as const)("opens the %s room and keeps the next map choice blocked", (type, dialogName) => {
+  const { container } = render(<CombatStage initialMap={interactiveRoomMap(type)} />);
+
+  fireEvent.click(within(container).getByRole("button", { name: new RegExp(type === "merchant" ? "Mercador" : type === "treasure" ? "Tesouro" : "Evento", "i") }));
+
+  expect(screen.getByRole("dialog", { name: dialogName })).toBeInTheDocument();
+  expect(container.querySelector('button[aria-label="Combate, bloqueado"]')).toBeDisabled();
 });
 
 it.each([
