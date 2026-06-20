@@ -118,7 +118,7 @@ export function applyGoldBonus(baseGold: number, inventory: readonly string[]): 
   validateInventory(inventory);
 
   const gold = inventory.includes("tax-amulet")
-    ? Math.floor((baseGold * 6) / 5)
+    ? baseGold + Math.floor(baseGold / 5)
     : baseGold;
   assertNonNegativeSafeInteger(gold, "gold");
   return gold;

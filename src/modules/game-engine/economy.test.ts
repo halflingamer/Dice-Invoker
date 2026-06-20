@@ -123,6 +123,12 @@ describe("applyGoldBonus", () => {
     expect(applyGoldBonus(9, ["tax-amulet"])).toBe(10);
   });
 
+  it("preserves integer precision when calculating a large safe gold bonus", () => {
+    expect(applyGoldBonus(4_054_199_049_377_828, ["tax-amulet"])).toBe(
+      4_865_038_859_253_393,
+    );
+  });
+
   it("does not stack duplicate amulets", () => {
     expect(applyGoldBonus(10, ["tax-amulet", "tax-amulet"])).toBe(12);
   });
