@@ -1,7 +1,11 @@
 import { auth } from "@/auth";
 import { createRunCommandHandler } from "@/modules/run/run-command-handler";
 import { getRunService } from "@/modules/run/run-service-instance";
-import { createMemoryRateLimiter } from "@/modules/security/rate-limit";
+import {
+  createMemoryRateLimiter,
+  runCommandRateLimitKey,
+  runCommandRateLimitPolicy,
+} from "@/modules/security/rate-limit";
 
 const limiter = createMemoryRateLimiter();
 
@@ -17,11 +21,13 @@ export async function POST(
     },
     execute: (...arguments_) => getRunService().execute(...arguments_),
     consumeRateLimit: (userId, targetRunId, commandType) => {
-      const automatic = commandType === "BEGIN_COMBAT_TURN" || commandType === "RESOLVE_COMBAT_TURN";
-      const commandClass = automatic ? "automatic-combat" : "player-intent";
-      const runLimit = automatic ? 60 : 30;
+      const policy = runCommandRateLimitPolicy(commandType);
       return limiter.consume(`account:${userId}`, 180, 60_000) &&
-        limiter.consume(`run:${targetRunId}:${commandClass}`, runLimit, 60_000);
+        limiter.consume(
+          runCommandRateLimitKey(userId, targetRunId, policy.bucket),
+          policy.limit,
+          policy.windowMs,
+        );
     },
   });
   return handler(request, runId);
