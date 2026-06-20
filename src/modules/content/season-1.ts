@@ -1,4 +1,4 @@
-import type { ClassStage, Die, Enemy, Hero, Season, SeasonEvent } from "./schema";
+import type { DungeonPhase, EvolutionStage, Guardian, Invader, SeasonEvent, SeasonSource, Die } from "./schema";
 
 type FaceInput = { label: string; kind: "damage" | "block" | "heal"; amount: number };
 
@@ -42,98 +42,65 @@ const dice: Die[] = [
   d6("primordial-aegis", "Égide Primordial", "defense", "relic", [guard("Destino", 4), guard("Destino", 4), heal("Renovar", 4), guard("Inabalável", 8), heal("Renovar", 4), guard("Não Hoje", 14)]),
 ];
 
-type ClassStageInput = Readonly<{
-  id: string;
-  name: string;
-  sides: ClassStage["sides"];
-  xpThreshold: number;
-  role: ClassStage["role"];
-  nextStageIds: readonly string[];
-}>;
+const guardians: Guardian[] = [{
+  id: "caretaker-slime", name: "Slime Zelador", rarity: "common", maxHp: 28,
+  naturalDefense: 1, startingDiceIds: ["slime-hammer"],
+  rootEvolutionStageId: "caretaker-slime-d4", unlock: { kind: "starter" },
+}];
 
-const roleWeights: Record<ClassStage["role"], ClassStage["aiWeights"]> = {
-  balanced: { attack: 45, defense: 45, magic: 10 },
-  assault: { attack: 75, defense: 20, magic: 5 },
-  defense: { attack: 25, defense: 70, magic: 5 },
-  counter: { attack: 55, defense: 40, magic: 5 },
-  support: { attack: 25, defense: 45, magic: 30 },
-};
-
-function classStage(input: ClassStageInput): ClassStage {
-  return {
-    ...input,
-    heroId: "squire",
-    nextStageIds: [...input.nextStageIds],
-    aiWeights: roleWeights[input.role],
-    faces: Array.from({ length: input.sides }, (_, index) => {
-      const rank = Math.floor(index / 2) + 1;
-      const attackFocused = input.role === "assault" || input.role === "counter";
-      const defenseFocused = input.role === "defense" || input.role === "support";
-      return {
-        id: `${input.id}-face-${index + 1}`,
-        label: `${input.name} ${index + 1}`,
-        damage: Math.max(1, rank + (attackFocused ? 1 : 0)),
-        block: Math.max(1, rank + (defenseFocused ? 1 : 0)),
-        healing: input.role === "support" && index >= input.sides - 2 ? rank : 0,
-      };
-    }),
-  };
+const stageSides = [4, 6, 8, 10, 12, 20] as const;
+const stageThresholds = [60, 160, 280, 430, 650, 0] as const;
+const evolutionStages: EvolutionStage[] = [];
+for (let depth = 0; depth < stageSides.length; depth += 1) {
+  const count = 2 ** depth;
+  for (let branch = 0; branch < count; branch += 1) {
+    const suffix = depth === 0 ? "" : `-${branch + 1}`;
+    const id = `caretaker-slime-d${stageSides[depth]}${suffix}`;
+    const defensive = branch % 2 === 1;
+    const nextSides = stageSides[depth + 1];
+    evolutionStages.push({
+      id,
+      guardianId: "caretaker-slime",
+      name: depth === 0 ? "Slime Zelador" : `${defensive ? "Bastião" : "Esmagador"} Gelatinoso ${branch + 1}`,
+      sides: stageSides[depth],
+      naturalDefense: 1 + (defensive ? depth : Math.floor(depth / 3)),
+      xpThreshold: stageThresholds[depth],
+      role: depth === 0 ? "balanced" : defensive ? "defense" : "assault",
+      nextStageIds: nextSides === undefined ? [] : [
+        `caretaker-slime-d${nextSides}-${branch * 2 + 1}`,
+        `caretaker-slime-d${nextSides}-${branch * 2 + 2}`,
+      ],
+    });
+  }
 }
 
-const classStageInputs: ClassStageInput[] = [
-  { id: "squire-d4", name: "Escudeiro", sides: 4, xpThreshold: 60, role: "balanced", nextStageIds: ["warrior-d6", "guardian-d6"] },
-  { id: "warrior-d6", name: "Guerreiro", sides: 6, xpThreshold: 160, role: "assault", nextStageIds: ["duelist-d8", "knight-d8"] },
-  { id: "guardian-d6", name: "Guardião", sides: 6, xpThreshold: 160, role: "defense", nextStageIds: ["paladin-d8", "bastion-d8"] },
-  { id: "duelist-d8", name: "Duelista", sides: 8, xpThreshold: 280, role: "counter", nextStageIds: ["blade-dancer-d10", "riposte-master-d10"] },
-  { id: "knight-d8", name: "Cavaleiro", sides: 8, xpThreshold: 280, role: "balanced", nextStageIds: ["royal-lancer-d10", "iron-marshal-d10"] },
-  { id: "paladin-d8", name: "Paladino", sides: 8, xpThreshold: 280, role: "support", nextStageIds: ["sun-templar-d10", "oathkeeper-d10"] },
-  { id: "bastion-d8", name: "Bastião", sides: 8, xpThreshold: 280, role: "defense", nextStageIds: ["fortress-d10", "thorn-warden-d10"] },
-  { id: "blade-dancer-d10", name: "Dançarino de Lâminas", sides: 10, xpThreshold: 430, role: "assault", nextStageIds: ["storm-of-steel-d12", "fate-duelist-d12"] },
-  { id: "riposte-master-d10", name: "Mestre da Réplica", sides: 10, xpThreshold: 430, role: "counter", nextStageIds: ["perfect-counter-d12", "mirror-blade-d12"] },
-  { id: "royal-lancer-d10", name: "Lanceiro Real", sides: 10, xpThreshold: 430, role: "assault", nextStageIds: ["dragon-lancer-d12", "kings-vanguard-d12"] },
-  { id: "iron-marshal-d10", name: "Marechal de Ferro", sides: 10, xpThreshold: 430, role: "defense", nextStageIds: ["adamant-general-d12", "war-citadel-d12"] },
-  { id: "sun-templar-d10", name: "Templário Solar", sides: 10, xpThreshold: 430, role: "support", nextStageIds: ["solar-paragon-d12", "dawn-saint-d12"] },
-  { id: "oathkeeper-d10", name: "Guardião do Juramento", sides: 10, xpThreshold: 430, role: "balanced", nextStageIds: ["eternal-oath-d12", "mercy-crown-d12"] },
-  { id: "fortress-d10", name: "Fortaleza", sides: 10, xpThreshold: 430, role: "defense", nextStageIds: ["living-fortress-d12", "world-shield-d12"] },
-  { id: "thorn-warden-d10", name: "Guardião dos Espinhos", sides: 10, xpThreshold: 430, role: "counter", nextStageIds: ["iron-thorns-d12", "retribution-king-d12"] },
-  { id: "storm-of-steel-d12", name: "Tempestade de Aço", sides: 12, xpThreshold: 0, role: "assault", nextStageIds: [] },
-  { id: "fate-duelist-d12", name: "Duelista do Destino", sides: 12, xpThreshold: 0, role: "counter", nextStageIds: [] },
-  { id: "perfect-counter-d12", name: "Contra-Ataque Perfeito", sides: 12, xpThreshold: 0, role: "counter", nextStageIds: [] },
-  { id: "mirror-blade-d12", name: "Lâmina-Espelho", sides: 12, xpThreshold: 0, role: "balanced", nextStageIds: [] },
-  { id: "dragon-lancer-d12", name: "Lanceiro Dracônico", sides: 12, xpThreshold: 0, role: "assault", nextStageIds: [] },
-  { id: "kings-vanguard-d12", name: "Vanguarda do Rei", sides: 12, xpThreshold: 0, role: "balanced", nextStageIds: [] },
-  { id: "adamant-general-d12", name: "General Adamantino", sides: 12, xpThreshold: 0, role: "defense", nextStageIds: [] },
-  { id: "war-citadel-d12", name: "Cidadela de Guerra", sides: 12, xpThreshold: 0, role: "defense", nextStageIds: [] },
-  { id: "solar-paragon-d12", name: "Paragão Solar", sides: 12, xpThreshold: 0, role: "support", nextStageIds: [] },
-  { id: "dawn-saint-d12", name: "Santo da Alvorada", sides: 12, xpThreshold: 0, role: "support", nextStageIds: [] },
-  { id: "eternal-oath-d12", name: "Juramento Eterno", sides: 12, xpThreshold: 0, role: "balanced", nextStageIds: [] },
-  { id: "mercy-crown-d12", name: "Coroa da Misericórdia", sides: 12, xpThreshold: 0, role: "support", nextStageIds: [] },
-  { id: "living-fortress-d12", name: "Fortaleza Viva", sides: 12, xpThreshold: 0, role: "defense", nextStageIds: [] },
-  { id: "world-shield-d12", name: "Escudo do Mundo", sides: 12, xpThreshold: 0, role: "defense", nextStageIds: [] },
-  { id: "iron-thorns-d12", name: "Espinhos de Ferro", sides: 12, xpThreshold: 0, role: "counter", nextStageIds: [] },
-  { id: "retribution-king-d12", name: "Rei da Retribuição", sides: 12, xpThreshold: 0, role: "counter", nextStageIds: [] },
-];
-const classStages: ClassStage[] = classStageInputs.map(classStage);
+const invaders: Invader[] = [
+  ["torch-bearer", "Portador de Tocha", "common", 9, 0, 4],
+  ["lock-picker", "Arrombadora", "common", 12, 0, 6],
+  ["veteran-raider", "Saqueador Veterano", "elite", 24, 1, 8],
+  ["collection-squire", "Escudeiro Cobrador", "boss", 34, 1, 6],
+  ["inspection-archer", "Arqueira de Vistoria", "boss", 42, 1, 8],
+  ["registry-mage", "Maga Cartorial", "boss", 52, 2, 8],
+  ["eviction-paladin", "Paladino de Despejo", "boss", 64, 3, 10],
+  ["consultant-necromancer", "Necromante Consultor", "boss", 78, 3, 12],
+  ["royal-auditor", "Auditor Real", "boss", 94, 4, 12],
+  ["privatization-prince", "Príncipe da Privatização", "boss", 120, 5, 20],
+].map(([id, name, rank, maxHp, naturalDefense, attackDie]) => ({
+  id, name, rank, maxHp, naturalDefense, attackDie,
+})) as Invader[];
 
-const heroes: Hero[] = [
-  { id: "squire", name: "Escudeiro", class: "guardian", rarity: "common", maxHp: 24, startingDiceIds: ["rusty-sword", "wooden-shield"], rootClassStageId: "squire-d4", unlock: { kind: "starter" } },
-  { id: "archer", name: "Arqueira", class: "ranger", rarity: "rare", maxHp: 18, startingDiceIds: ["short-bow", "wooden-shield"], unlock: { kind: "achievement", achievementId: "steady-aim" } },
-  { id: "mage", name: "Maga", class: "mage", rarity: "rare", maxHp: 16, startingDiceIds: ["ember-orb", "mending-light"], unlock: { kind: "achievement", achievementId: "arcane-audit" } },
-];
-
-const enemies: Enemy[] = [
-  ["receipt-slime", "Slime de Recibo", "common", 8, 2],
-  ["late-fee-slime", "Slime de Mora", "common", 10, 3],
-  ["ink-goblin", "Goblin de Tinteiro", "common", 9, 3],
-  ["form-mimic", "Mímico Formulário", "common", 12, 3],
-  ["stamp-bat", "Morcego Carimbador", "common", 7, 4],
-  ["deduction-rat", "Rato de Dedução", "common", 8, 3],
-  ["invoice-wisp", "Fogo-Fátuo de Nota", "common", 9, 4],
-  ["collector-orc", "Orc Cobrador", "common", 14, 4],
-  ["gelatinous-inspector", "Inspetor Gelatinoso", "elite", 28, 6],
-  ["senior-auditor", "Auditor Sênior", "elite", 32, 7],
-  ["gelatinous-supervisor", "Supervisor Gelatinoso", "boss", 64, 9],
-].map(([id, name, rank, maxHp, damage]) => ({ id, name, rank, maxHp, damage })) as Enemy[];
+const phaseInputs = [
+  ["ransacked-entrance", "Entrada Saqueada", "collection-squire"],
+  ["storage-galleries", "Galerias de Estoque", "inspection-archer"],
+  ["forbidden-library", "Biblioteca Proibida", "registry-mage"],
+  ["abandoned-forge", "Forja Abandonada", "eviction-paladin"],
+  ["outsourced-crypt", "Cripta Terceirizada", "consultant-necromancer"],
+  ["core-vaults", "Cofres do Núcleo", "royal-auditor"],
+  ["dungeon-heart", "Coração da Dungeon", "privatization-prince"],
+] as const;
+const phases: DungeonPhase[] = phaseInputs.map(([id, name, bossInvaderId], offset) => ({
+  id, name, bossInvaderId, index: offset + 1, roomCount: offset + 3, difficulty: offset + 1,
+}));
 
 const events: SeasonEvent[] = [
   { id: "goblin-insurance", title: "Goblin Vendedor de Seguro", description: "Cobertura total, exceto para tudo que costuma acontecer em uma dungeon.", options: [{ id: "buy", label: "Comprar seguro", consequence: "reward" }, { id: "ignore", label: "Ignorar", consequence: "safe" }, { id: "steal", label: "Roubar a apólice", consequence: "risk" }] },
@@ -147,10 +114,11 @@ const events: SeasonEvent[] = [
 export const seasonOne = {
   id: "season-1",
   version: "1.0.0",
-  name: "A Rebelião dos Slimes Tributários",
-  heroes,
-  classStages,
+  name: "A Privatização da Dungeon",
+  guardians,
+  evolutionStages,
   dice,
-  enemies,
+  invaders,
   events,
-} satisfies Season;
+  phases,
+} satisfies SeasonSource;
