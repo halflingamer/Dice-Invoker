@@ -85,6 +85,9 @@ export function createRunService({ prisma, seedSecret }: Dependencies) {
       const seed = seedCipher.decrypt(run.seedCiphertext);
       const currentState: RunState = { seed, ...parsePersistedState(run.stateJson) };
       const nextState = applyCommand(currentState, command);
+      if (nextState === currentState) {
+        return { id: run.id, version: run.version, state: withoutSeed(currentState) };
+      }
       const persisted = withoutSeed(nextState);
       const response: RunResponse = { id: run.id, version: run.version + 1, state: persisted };
 
@@ -103,7 +106,7 @@ export function createRunService({ prisma, seedSecret }: Dependencies) {
           await transaction.runCommand.create({
             data: {
               runId,
-              sequence: command.sequence,
+              sequence: nextState.sequence,
               idempotencyKey,
               type: command.type,
               payloadJson: toJson(command),

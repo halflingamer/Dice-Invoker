@@ -1,7 +1,8 @@
-import type { EventAuditRecord, EventOffer } from "@/modules/game-engine/events";
+import type { EventAuditRecord, EventChoiceResult, EventOffer } from "@/modules/game-engine/events";
+import type { RunItemId } from "@/modules/game-engine/economy";
 import type { RunMap } from "@/modules/game-engine/map";
 import type { RandomChannel } from "@/modules/game-engine/rng";
-import type { RewardOffer } from "@/modules/game-engine/rewards";
+import type { MerchantOffer, RewardOffer, TreasureOffer } from "@/modules/game-engine/rewards";
 import type { ClassCombatDice, CombatDieKind } from "@/modules/game-engine/types";
 
 export type RunPhase =
@@ -30,6 +31,12 @@ export type CombatTurnState = Readonly<ClassCombatDice & {
   rerolledDieKinds: readonly CombatDieKind[];
 }>;
 
+export type PendingRoom =
+  | Readonly<{ kind: "merchant"; offer: MerchantOffer }>
+  | Readonly<{ kind: "treasure"; offer: TreasureOffer }>
+  | Readonly<{ kind: "event"; offer: EventOffer; result: EventChoiceResult | null }>
+  | null;
+
 export type RunState = Readonly<{
   seed: string;
   sequence: number;
@@ -46,6 +53,10 @@ export type RunState = Readonly<{
   essence: number;
   maxEssence: number;
   gold: number;
+  inventory: readonly RunItemId[];
+  pendingRoom: PendingRoom;
+  handledRoomCommandIds: readonly string[];
+  purchasedMerchantOfferIds: readonly string[];
   hasInsurance: boolean;
   equippedDieIds: readonly string[];
   rolls: readonly DieRoll[];

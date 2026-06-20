@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { seasonOne } from "@/modules/content/season-1";
 import { createEventOffer } from "@/modules/game-engine/events";
-import { createRewardOffer } from "@/modules/game-engine/rewards";
+import { RUN_ITEMS } from "@/modules/game-engine/economy";
+import { createMerchantOffer, createRewardOffer, createTreasureOffer } from "@/modules/game-engine/rewards";
 import { runCommandSchema } from "./command-schema";
 import { createRun } from "./create-run";
 import { applyCommand } from "./reducer";
@@ -18,6 +19,22 @@ function readyToRollRun() {
 
 const at = (milliseconds: number) => ({ now: () => milliseconds });
 
+function enterInteractiveRoom(type: "merchant" | "treasure" | "event") {
+  const base = createRun({ seed: `interactive-${type}`, heroId: "squire" });
+  const room = base.map.layers[0]!.nodes[0]!;
+  const map = {
+    ...base.map,
+    layers: base.map.layers.map((layer) => ({
+      ...layer,
+      nodes: layer.nodes.map((node) => node.id === room.id ? { ...node, type } : node),
+    })),
+  };
+  return applyCommand(
+    { ...base, map, phase: "room-choice", availableRoomIds: [room.id] },
+    { type: "CHOOSE_ROOM", sequence: 1, roomId: room.id },
+  );
+}
+
 describe("run reducer", () => {
   it("starts before the first choice with an authoritative rolled map and D4 class", () => {
     const run = createRun({ seed: "server-seed", heroId: "squire" });
@@ -30,6 +47,9 @@ describe("run reducer", () => {
     expect(run.currentLayer).toBe(0);
     expect(run.currentClassStageId).toBe("squire-d4");
     expect(run.xp).toBe(0);
+    expect(run).toMatchObject({ heroHp: 24, heroMaxHp: 24, gold: 12, essence: 2 });
+    expect(run.inventory).toEqual([]);
+    expect(run.pendingRoom).toBeNull();
     expect(run.rngCursors).toEqual({
       map: run.map.rngCursor,
       encounter: 0,
@@ -198,6 +218,127 @@ describe("run reducer", () => {
     ).toThrow();
   });
 
+  it("accepts only intent fields for interactive room commands", () => {
+    expect(() => runCommandSchema.parse({
+      type: "BUY_MERCHANT_ITEM", offerId: "merchant-1", commandId: "buy-1", price: 1,
+    })).toThrow();
+    expect(() => runCommandSchema.parse({
+      type: "CHOOSE_TREASURE", offerId: "treasure-1", commandId: "treasure-1", gold: 999,
+    })).toThrow();
+    expect(() => runCommandSchema.parse({
+      type: "CHOOSE_EVENT_OPTION", offerId: "event-1", commandId: "event-1", damage: 0,
+    })).toThrow();
+  });
+
+  it("creates authoritative room offers and blocks map routes", () => {
+    for (const type of ["merchant", "treasure", "event"] as const) {
+      const entered = enterInteractiveRoom(type);
+      expect(entered.pendingRoom?.kind).toBe(type);
+      expect(entered.availableRoomIds).toEqual([]);
+      expect(() => applyCommand(entered, {
+        type: "CHOOSE_ROOM", sequence: 2, roomId: entered.map.layers[1]!.nodes[0]!.id,
+      })).toThrow(/pending|available/i);
+    }
+  });
+
+  it("buys only active merchant offers, checks funds and prevents duplicate passives", () => {
+    const base = createRun({ seed: "merchant-tests", heroId: "squire" });
+    const offer = createMerchantOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const sword = offer.options.find((option) => RUN_ITEMS[option.itemId].kind === "passive")!;
+    const run = { ...base, gold: 12, pendingRoom: { kind: "merchant" as const, offer } };
+
+    expect(() => applyCommand(run, {
+      type: "BUY_MERCHANT_ITEM", offerId: "merchant-forged", commandId: "buy-forged",
+    })).toThrow(/offer/i);
+    const bought = applyCommand(run, {
+      type: "BUY_MERCHANT_ITEM", offerId: sword.offerId, commandId: "buy-sword",
+    });
+    expect(bought.inventory).toContain(sword.itemId);
+    expect(bought.gold).toBe(12 - RUN_ITEMS[sword.itemId].price);
+    expect(() => applyCommand(bought, {
+      type: "BUY_MERCHANT_ITEM", offerId: sword.offerId, commandId: "buy-again",
+    })).toThrow(/offer/i);
+    expect(applyCommand(bought, {
+      type: "BUY_MERCHANT_ITEM", offerId: sword.offerId, commandId: "buy-sword",
+    })).toBe(bought);
+
+    const poor = { ...run, gold: 0 };
+    expect(() => applyCommand(poor, {
+      type: "BUY_MERCHANT_ITEM", offerId: sword.offerId, commandId: "buy-poor",
+    })).toThrow(/gold/i);
+
+    const renameSwordOffer = (option: (typeof offer.options)[number]) => option.offerId === sword.offerId
+      ? { ...option, offerId: "merchant-same-passive" }
+      : option;
+    const repeatedPassive = {
+      ...run,
+      inventory: [sword.itemId],
+      pendingRoom: {
+        kind: "merchant" as const,
+        offer: { ...offer, options: [
+          renameSwordOffer(offer.options[0]),
+          renameSwordOffer(offer.options[1]),
+          renameSwordOffer(offer.options[2]),
+        ] as const },
+      },
+    };
+    expect(() => applyCommand(repeatedPassive, {
+      type: "BUY_MERCHANT_ITEM", offerId: "merchant-same-passive", commandId: "buy-repeat-passive",
+    })).toThrow(/passive/i);
+  });
+
+  it("leaves merchant and unlocks only official next rooms", () => {
+    const entered = enterInteractiveRoom("merchant");
+    const current = entered.map.layers[0]!.nodes.find((node) => node.id === entered.currentRoomId)!;
+    const left = applyCommand(entered, { type: "LEAVE_MERCHANT", commandId: "leave-1" });
+    expect(left.pendingRoom).toBeNull();
+    expect(left.availableRoomIds).toEqual(current.nextNodeIds);
+  });
+
+  it("allows exactly one authoritative treasure choice", () => {
+    const base = createRun({ seed: "treasure-tests", heroId: "squire" });
+    const offer = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const gold = offer.options.find((option) => option.payload.kind === "gold")!;
+    const run = { ...base, currentRoomId: base.map.layers[0]!.nodes[0]!.id, pendingRoom: { kind: "treasure" as const, offer } };
+    expect(() => applyCommand(run, {
+      type: "CHOOSE_TREASURE", offerId: "treasure-forged", commandId: "take-forged",
+    })).toThrow(/offer/i);
+    const chosen = applyCommand(run, {
+      type: "CHOOSE_TREASURE", offerId: gold.offerId, commandId: "take-gold",
+    });
+    expect(chosen.gold).toBeGreaterThan(run.gold);
+    expect(chosen.pendingRoom).toBeNull();
+    expect(applyCommand(chosen, {
+      type: "CHOOSE_TREASURE", offerId: gold.offerId, commandId: "take-gold",
+    })).toBe(chosen);
+    expect(() => applyCommand(chosen, {
+      type: "CHOOSE_TREASURE", offerId: offer.options[1].offerId, commandId: "take-twice",
+    })).toThrow(/treasure/i);
+  });
+
+  it("keeps event result pending until acknowledgement", () => {
+    const entered = enterInteractiveRoom("event");
+    if (entered.pendingRoom?.kind !== "event") throw new Error("event room expected");
+    expect(() => applyCommand(entered, {
+      type: "ACKNOWLEDGE_EVENT_RESULT", commandId: "ack-early",
+    })).toThrow(/result/i);
+    expect(() => applyCommand(entered, {
+      type: "CHOOSE_EVENT_OPTION", offerId: "event-forged", commandId: "event-forged",
+    })).toThrow(/offer/i);
+    const choice = entered.pendingRoom.offer.options[0]!;
+    const resolved = applyCommand(entered, {
+      type: "CHOOSE_EVENT_OPTION", offerId: choice.offerId, commandId: "event-choice",
+    });
+    expect(resolved.pendingRoom?.kind).toBe("event");
+    if (resolved.pendingRoom?.kind !== "event") throw new Error("event result expected");
+    expect(resolved.pendingRoom.result).not.toBeNull();
+    const acknowledged = applyCommand(resolved, {
+      type: "ACKNOWLEDGE_EVENT_RESULT", commandId: "event-ack",
+    });
+    expect(acknowledged.pendingRoom).toBeNull();
+    expect(acknowledged.availableRoomIds.length).toBeGreaterThan(0);
+  });
+
   it("accepts only rooms exposed by the official state", () => {
     const base = createRun({ seed: "server-seed", heroId: "squire" });
     const run = { ...base, phase: "room-choice" as const };
@@ -214,7 +355,7 @@ describe("run reducer", () => {
     expect(() => applyCommand(run, { type: "CHOOSE_REWARD", sequence: 1, rewardId: "reward-forged" })).toThrow(/offered/i);
   });
 
-  it("accepts only event option ids present in the official offer", () => {
+  it("accepts only event option ids present in the legacy official offer", () => {
     const base = createRun({ seed: "server-seed", heroId: "squire" });
     const event = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance")!;
     const eventOffer = createEventOffer(event, base.seed, base.rngCursors.event);

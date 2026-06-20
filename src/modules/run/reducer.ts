@@ -2,8 +2,9 @@ import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
 import { rollClassCombatDice, rollClassCombatDie, resolveTurn } from "@/modules/game-engine/combat";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
-import { resolveEventChoice } from "@/modules/game-engine/events";
-import { chooseReward } from "@/modules/game-engine/rewards";
+import { createEventOffer, resolveEventChoice } from "@/modules/game-engine/events";
+import { RUN_ITEMS, applyGoldBonus, purchaseItem, type RunItemId } from "@/modules/game-engine/economy";
+import { chooseMerchantItem, chooseReward, chooseTreasureReward, createMerchantOffer, createTreasureOffer } from "@/modules/game-engine/rewards";
 import { applyPromotion, awardExperience, getPromotionChoices } from "@/modules/game-engine/progression";
 import { runCommandSchema, type RunCommand } from "./command-schema";
 import type { DieRoll, RunState } from "./state";
@@ -22,9 +23,34 @@ function requirePhase(state: RunState, phase: RunState["phase"]) {
 }
 
 function assertSequence(state: RunState, command: RunCommand) {
+  if (!("sequence" in command)) return;
   if (command.sequence !== state.sequence + 1) {
     throw new Error(`invalid sequence: expected ${state.sequence + 1}`);
   }
+}
+
+function isRoomCommand(command: RunCommand): command is Extract<RunCommand, { commandId: string }> {
+  return "commandId" in command;
+}
+
+function rememberRoomCommand(state: RunState, commandId: string): Pick<RunState, "handledRoomCommandIds" | "sequence"> {
+  return { handledRoomCommandIds: [...state.handledRoomCommandIds, commandId], sequence: state.sequence + 1 };
+}
+
+function nextRoomIds(state: RunState): readonly string[] {
+  const node = state.currentRoomId
+    ? state.map.layers.flatMap((layer) => layer.nodes).find((candidate) => candidate.id === state.currentRoomId)
+    : undefined;
+  return [...(node?.nextNodeIds ?? [])];
+}
+
+function grantTreasureItem(state: RunState, itemId: RunItemId): Pick<RunState, "heroHp" | "inventory"> {
+  const item = RUN_ITEMS[itemId];
+  if (item.kind === "consumable") {
+    return { heroHp: Math.min(state.heroMaxHp, state.heroHp + 6), inventory: state.inventory };
+  }
+  if (state.inventory.includes(itemId)) throw new Error("treasure item is not available");
+  return { heroHp: state.heroHp, inventory: [...state.inventory, itemId] };
 }
 
 function rollEquippedDice(state: RunState): Pick<RunState, "rolls" | "rngCursors"> {
@@ -50,6 +76,7 @@ export function applyCommand(
   context: CommandContext = { now: () => Date.now() },
 ): RunState {
   const command = runCommandSchema.parse(input);
+  if (isRoomCommand(command) && state.handledRoomCommandIds.includes(command.commandId)) return state;
   assertSequence(state, command);
 
   switch (command.type) {
@@ -208,6 +235,7 @@ export function applyCommand(
       throw new Error("result activation is introduced with combat orchestration");
     case "CHOOSE_ROOM": {
       requirePhase(state, "room-choice");
+      if (state.pendingRoom) throw new Error("a room is still pending");
       const currentNode = state.currentRoomId
         ? state.map.layers.flatMap((layer) => layer.nodes).find((node) => node.id === state.currentRoomId)
         : null;
@@ -222,6 +250,39 @@ export function applyCommand(
       if (!selectedLayer || selectedLayer.index !== state.currentLayer + 1) {
         throw new Error("room is not on the next layer");
       }
+      const selectedNode = selectedLayer.nodes.find((node) => node.id === command.roomId)!;
+      if (selectedNode.type === "merchant") {
+        const offer = createMerchantOffer(state.seed, state.rngCursors.reward, Object.keys(RUN_ITEMS));
+        return {
+          ...state, sequence: command.sequence, phase: "room-choice", currentRoomId: command.roomId,
+          currentLayer: selectedLayer.index, visitedRoomIds: [...state.visitedRoomIds, command.roomId],
+          availableRoomIds: [], pendingRoom: { kind: "merchant", offer },
+          rngCursors: { ...state.rngCursors, reward: offer.rngCursor },
+        };
+      }
+      if (selectedNode.type === "treasure") {
+        const candidates = Object.values(RUN_ITEMS)
+          .filter((item) => item.kind === "consumable" || !state.inventory.includes(item.id))
+          .map((item) => item.id);
+        const offer = createTreasureOffer(state.seed, state.rngCursors.reward, candidates);
+        return {
+          ...state, sequence: command.sequence, phase: "room-choice", currentRoomId: command.roomId,
+          currentLayer: selectedLayer.index, visitedRoomIds: [...state.visitedRoomIds, command.roomId],
+          availableRoomIds: [], pendingRoom: { kind: "treasure", offer },
+          rngCursors: { ...state.rngCursors, reward: offer.rngCursor },
+        };
+      }
+      if (selectedNode.type === "event") {
+        const event = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance");
+        if (!event) throw new Error("event content is unavailable");
+        const offer = createEventOffer(event, state.seed, state.rngCursors.event);
+        return {
+          ...state, sequence: command.sequence, phase: "room-choice", currentRoomId: command.roomId,
+          currentLayer: selectedLayer.index, visitedRoomIds: [...state.visitedRoomIds, command.roomId],
+          availableRoomIds: [], pendingRoom: { kind: "event", offer, result: null },
+          rngCursors: { ...state.rngCursors, event: offer.rngCursor },
+        };
+      }
       return {
         ...state,
         sequence: command.sequence,
@@ -230,6 +291,41 @@ export function applyCommand(
         currentLayer: selectedLayer.index,
         visitedRoomIds: [...state.visitedRoomIds, command.roomId],
         availableRoomIds: [],
+      };
+    }
+    case "BUY_MERCHANT_ITEM": {
+      if (!state.pendingRoom || state.pendingRoom.kind !== "merchant") throw new Error("merchant offer is not active");
+      if (state.purchasedMerchantOfferIds.includes(command.offerId)) throw new Error("merchant offer is not active");
+      let option;
+      try { option = chooseMerchantItem(state.pendingRoom.offer, command.offerId); }
+      catch { throw new Error("merchant offer is not active"); }
+      const purchased = purchaseItem(state, option.itemId);
+      return {
+        ...state, ...purchased, ...rememberRoomCommand(state, command.commandId),
+        purchasedMerchantOfferIds: [...state.purchasedMerchantOfferIds, command.offerId],
+      };
+    }
+    case "LEAVE_MERCHANT":
+      if (!state.pendingRoom || state.pendingRoom.kind !== "merchant") throw new Error("merchant room is not active");
+      return {
+        ...state, ...rememberRoomCommand(state, command.commandId), pendingRoom: null,
+        availableRoomIds: nextRoomIds(state), phase: "room-choice",
+      };
+    case "CHOOSE_TREASURE": {
+      if (!state.pendingRoom || state.pendingRoom.kind !== "treasure") throw new Error("treasure offer is not active");
+      let option;
+      try { option = chooseTreasureReward(state.pendingRoom.offer, command.offerId); }
+      catch { throw new Error("treasure offer is not active"); }
+      let gold = state.gold;
+      let essence = state.essence;
+      let heroHp = state.heroHp;
+      let inventory = state.inventory;
+      if (option.payload.kind === "gold") gold += applyGoldBonus(option.payload.amount, state.inventory);
+      if (option.payload.kind === "essence") essence += option.payload.amount;
+      if (option.payload.kind === "item") ({ heroHp, inventory } = grantTreasureItem(state, option.payload.itemId));
+      return {
+        ...state, ...rememberRoomCommand(state, command.commandId), gold, essence, heroHp, inventory,
+        pendingRoom: null, availableRoomIds: nextRoomIds(state), phase: "room-choice",
       };
     }
     case "CHOOSE_REWARD": {
@@ -247,6 +343,29 @@ export function applyCommand(
       };
     }
     case "CHOOSE_EVENT_OPTION": {
+      if (!("sequence" in command)) {
+        if (!state.pendingRoom || state.pendingRoom.kind !== "event" || state.pendingRoom.result) {
+          throw new Error("event offer is not active");
+        }
+        let result;
+        try {
+          result = resolveEventChoice({
+            offer: state.pendingRoom.offer, offerId: command.offerId, seed: state.seed,
+            rngCursor: state.rngCursors.event, gold: state.gold,
+          });
+        } catch (error) {
+          if (error instanceof Error && /gold/i.test(error.message)) throw error;
+          throw new Error("event offer is not active");
+        }
+        return {
+          ...state, ...rememberRoomCommand(state, command.commandId), gold: result.gold,
+          hasInsurance: state.hasInsurance || result.hasInsurance,
+          heroHp: Math.max(0, Math.min(state.heroMaxHp, state.heroHp + result.hpDelta)),
+          rngCursors: { ...state.rngCursors, event: result.rngCursor },
+          eventAuditTrail: [...state.eventAuditTrail, result.audit],
+          pendingRoom: { ...state.pendingRoom, result },
+        };
+      }
       requirePhase(state, "event");
       if (!state.eventOffer) throw new Error("no event option is currently offered");
       const result = resolveEventChoice({
@@ -268,6 +387,14 @@ export function applyCommand(
         eventAuditTrail: [...state.eventAuditTrail, result.audit],
       };
     }
+    case "ACKNOWLEDGE_EVENT_RESULT":
+      if (!state.pendingRoom || state.pendingRoom.kind !== "event" || !state.pendingRoom.result) {
+        throw new Error("event result is not available");
+      }
+      return {
+        ...state, ...rememberRoomCommand(state, command.commandId), pendingRoom: null,
+        availableRoomIds: nextRoomIds(state), phase: "room-choice",
+      };
     case "CHOOSE_PROMOTION": {
       requirePhase(state, "promotion");
       if (!state.pendingPromotionIds.includes(command.classStageId)) {

@@ -3,7 +3,7 @@ import { z } from "zod";
 const id = z.string().regex(/^[a-z0-9-]+$/).max(80);
 const sequence = z.number().int().positive();
 
-export const runCommandSchema = z.discriminatedUnion("type", [
+export const runCommandSchema = z.union([
   z.object({ type: z.literal("ACKNOWLEDGE_MAP_REVEAL"), sequence }).strict(),
   z.object({ type: z.literal("CHOOSE_ROOM"), sequence, roomId: id }).strict(),
   z.object({ type: z.literal("BEGIN_COMBAT_TURN"), sequence }).strict(),
@@ -29,6 +29,11 @@ export const runCommandSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("CHOOSE_EVENT_OPTION"), sequence, optionId: id })
     .strict(),
+  z.object({ type: z.literal("BUY_MERCHANT_ITEM"), offerId: id, commandId: id }).strict(),
+  z.object({ type: z.literal("LEAVE_MERCHANT"), commandId: id }).strict(),
+  z.object({ type: z.literal("CHOOSE_TREASURE"), offerId: id, commandId: id }).strict(),
+  z.object({ type: z.literal("CHOOSE_EVENT_OPTION"), offerId: id, commandId: id }).strict(),
+  z.object({ type: z.literal("ACKNOWLEDGE_EVENT_RESULT"), commandId: id }).strict(),
   z.object({ type: z.literal("CHOOSE_PROMOTION"), sequence, classStageId: id }).strict(),
 ]);
 
