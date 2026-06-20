@@ -3,6 +3,8 @@ export const GAME_ASSETS = {
   squireIdle: "/assets/characters/squire/idle-strip.png",
   squireAttack: "/assets/characters/squire/attack-strip.png",
   receiptSlime: "/assets/characters/enemies/receipt-slime.png",
+  receiptSlimeElite: "/assets/characters/enemies/receipt-slime-elite.png",
+  receiptSlimeBoss: "/assets/characters/enemies/receipt-slime-boss.png",
   rustySword: "/assets/items/rusty-sword.png",
   woodenShield: "/assets/items/wooden-shield.png",
   essence: "/assets/items/essence.png",

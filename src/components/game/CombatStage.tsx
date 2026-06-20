@@ -83,7 +83,10 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
     initialHeroHp: heroHp,
     sides: classSides,
     enemyRank,
-    onHeroHpChange: setHeroHp,
+    onHeroHpChange: (nextHeroHp) => {
+      setHeroHp(nextHeroHp);
+      setEvent({ id: Date.now(), type: "enemy-hit" });
+    },
     onVictory: finishCombat,
   });
 
@@ -245,7 +248,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
             <div className="room-progress"><b>Sala {route.visitedRoomIds.length}/10</b><span>XP da run · evolução temporária</span></div>
             <div className="enemy"><b>{enemyName}</b><span>♥ {combat.enemyHp}/{enemyMaxHp}</span></div>
           </header>
-          <PhaserBattle event={event} />
+          <PhaserBattle event={event} enemyRank={enemyRank} />
           {combat.phase !== "idle" ? (
             <CombatDiceOverlay
               phase={combat.phase}
