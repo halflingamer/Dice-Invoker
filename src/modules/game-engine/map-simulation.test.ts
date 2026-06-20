@@ -1,56 +1,58 @@
 import { describe, expect, it } from "vitest";
-import { generateMap, type RunMap, type RoomType } from "./map";
+import { generateMap, type MapNode, type RunMap, type RoomType } from "./map";
 
 const RECOVERY_TYPES = new Set<RoomType>(["rest", "merchant"]);
 
-function fairnessViolations(map: RunMap): string[] {
-  const violations: string[] = [];
+function enumeratePaths(map: RunMap): MapNode[][] {
   const nodes = new Map(map.layers.flatMap((layer) => layer.nodes.map((node) => [node.id, node])));
-  const reachableWithoutRecovery = new Set(
-    map.layers[0]!.nodes.filter((node) => !RECOVERY_TYPES.has(node.type)).map((node) => node.id),
-  );
+  const paths: MapNode[][] = [];
+  const visit = (path: MapNode[]) => {
+    const current = path.at(-1)!;
+    if (current.nextNodeIds.length === 0) paths.push(path);
+    else current.nextNodeIds.forEach((id) => visit([...path, nodes.get(id)!]));
+  };
+  map.layers[0]!.nodes.forEach((node) => visit([node]));
+  return paths;
+}
 
-  for (const layer of map.layers.slice(0, -1)) {
-    for (const node of layer.nodes) {
-      for (const nextId of node.nextNodeIds) {
-        const next = nodes.get(nextId)!;
-        if (node.type === "elite" && next.type === "elite") violations.push(`consecutive elites at ${node.id}`);
-        for (const afterId of next.nextNodeIds) {
-          const after = nodes.get(afterId)!;
-          if (node.type === next.type && next.type === after.type) violations.push(`triple ${node.type} at ${node.id}`);
-        }
-        if (reachableWithoutRecovery.has(node.id) && !RECOVERY_TYPES.has(next.type)) {
-          reachableWithoutRecovery.add(next.id);
-        }
+function pathViolations(map: RunMap): string[] {
+  const violations: string[] = [];
+  for (const path of enumeratePaths(map)) {
+    const choices = path.slice(0, -1);
+    if (!choices.some((node) => RECOVERY_TYPES.has(node.type))) violations.push("route lacks recovery");
+    for (let index = 0; index < choices.length - 1; index += 1) {
+      if (choices[index]!.type === "elite" && choices[index + 1]!.type === "elite") violations.push("consecutive elites");
+    }
+    for (let index = 0; index < choices.length - 2; index += 1) {
+      if (choices[index]!.type === choices[index + 1]!.type && choices[index + 1]!.type === choices[index + 2]!.type) {
+        violations.push(`triple ${choices[index]!.type}`);
       }
     }
-  }
-
-  if (map.layers.at(-1)!.nodes.some((boss) => reachableWithoutRecovery.has(boss.id))) {
-    violations.push("boss reachable without recovery");
   }
   return violations;
 }
 
 describe("controlled map simulation", () => {
-  it("protects every complete path across five thousand seeds", () => {
+  it("protects every complete path across one thousand seeds and all seven phase sizes", () => {
     const observed = new Map<RoomType, number>();
 
-    for (let seed = 0; seed < 5_000; seed += 1) {
-      const map = generateMap(`simulation-seed-${seed}`);
-      expect(fairnessViolations(map), `seed ${seed}`).toEqual([]);
-      expect(map.layers).toHaveLength(10);
-      expect(map.layers.at(-1)?.nodes).toEqual([
-        { id: "room-10-1", type: "boss", nextNodeIds: [] },
-      ]);
-
-      for (const node of map.layers.flatMap((layer) => layer.nodes)) {
-        observed.set(node.type, (observed.get(node.type) ?? 0) + 1);
+    for (let seed = 0; seed < 1_000; seed += 1) {
+      for (let roomCount = 3; roomCount <= 9; roomCount += 1) {
+        const phaseIndex = roomCount - 2;
+        const map = generateMap({ seed: `simulation-seed-${seed}`, phaseIndex, roomCount });
+        expect(pathViolations(map), `seed ${seed}, phase ${phaseIndex}`).toEqual([]);
+        expect(map.layers).toHaveLength(roomCount + 1);
+        expect(map.layers.at(-1)?.nodes).toEqual([
+          { id: `phase-${phaseIndex}-room-${roomCount + 1}-1`, type: "boss", nextNodeIds: [] },
+        ]);
+        for (const node of map.layers.flatMap((layer) => layer.nodes)) {
+          observed.set(node.type, (observed.get(node.type) ?? 0) + 1);
+        }
       }
     }
 
     expect(observed.get("combat")).toBeGreaterThan(observed.get("elite") ?? 0);
     expect(observed.get("event")).toBeGreaterThan(observed.get("elite") ?? 0);
-    expect(observed.get("boss")).toBe(5_000);
+    expect(observed.get("boss")).toBe(7_000);
   }, 30_000);
 });

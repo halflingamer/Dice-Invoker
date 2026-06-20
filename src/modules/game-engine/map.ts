@@ -21,6 +21,12 @@ export type RunMap = Readonly<{
 type NodeDraft = { id: string; type: RoomType; nextNodeIds: string[] };
 type LayerDraft = { index: number; nodes: NodeDraft[] };
 
+export type GenerateMapInput = Readonly<{
+  seed: string;
+  phaseIndex: number;
+  roomCount: number;
+}>;
+
 const ROOM_BAG: readonly RoomType[] = [
   "combat", "combat", "combat", "combat", "combat", "combat", "combat", "combat",
   "event", "event", "event", "event",
@@ -68,15 +74,24 @@ function connectLayers(current: LayerDraft, next: LayerDraft, stream: RollStream
   });
 }
 
-function createTopology(stream: RollStream, recoveryLayer: number): LayerDraft[] {
-  const layers = Array.from({ length: 10 }, (_, offset): LayerDraft => {
+function createTopology(
+  stream: RollStream,
+  recoveryLayer: number,
+  phaseIndex: number,
+  roomCount: number,
+  legacyIds = false,
+): LayerDraft[] {
+  const bossLayer = roomCount + 1;
+  const layers = Array.from({ length: bossLayer }, (_, offset): LayerDraft => {
     const index = offset + 1;
-    const width = index === 10 ? 1 : index === recoveryLayer ? 2 : stream.roll(2) + 1;
+    const width = index === bossLayer ? 1 : index === recoveryLayer ? 2 : stream.roll(2) + 1;
     return {
       index,
       nodes: Array.from({ length: width }, (_, nodeOffset) => ({
-        id: `room-${index}-${nodeOffset + 1}`,
-        type: index === 10 ? "boss" : "combat",
+        id: legacyIds
+          ? `room-${index}-${nodeOffset + 1}`
+          : `phase-${phaseIndex}-room-${index}-${nodeOffset + 1}`,
+        type: index === bossLayer ? "boss" : "combat",
         nextNodeIds: [],
       })),
     };
@@ -161,10 +176,17 @@ function applyFallback(layers: LayerDraft[], recoveryLayer: number) {
   }
 }
 
-export function generateMap(seed: string): RunMap {
-  const stream = createNamedRollStream(seed, "map");
-  const recoveryLayer = stream.roll(7) + 1;
-  const layers = createTopology(stream, recoveryLayer);
+export function generateMap(input: GenerateMapInput): RunMap;
+/** @deprecated Pass a GenerateMapInput. Temporary compatibility defaults to phase 1 with nine rooms. */
+export function generateMap(seed: string): RunMap;
+export function generateMap(input: GenerateMapInput | string): RunMap {
+  const legacySeed = typeof input === "string";
+  const { seed, phaseIndex, roomCount } = legacySeed
+    ? { seed: input, phaseIndex: 1, roomCount: 9 }
+    : input;
+  const stream = createNamedRollStream(legacySeed ? seed : `${seed}:phase:${phaseIndex}`, "map");
+  const recoveryLayer = roomCount === 3 ? 2 : stream.roll(roomCount - 2) + 1;
+  const layers = createTopology(stream, recoveryLayer, phaseIndex, roomCount, legacySeed);
 
   let valid = false;
   for (let attempt = 0; attempt < MAX_ASSIGNMENT_ATTEMPTS; attempt += 1) {
