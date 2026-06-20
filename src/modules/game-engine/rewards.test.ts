@@ -29,6 +29,16 @@ describe("createMerchantOffer", () => {
     );
   });
 
+  it("supports exactly three unique valid candidates", () => {
+    const candidates = itemIds.slice(0, 3);
+
+    const offer = createMerchantOffer("minimum-merchant-seed", 0, candidates);
+
+    expect(offer.options).toHaveLength(3);
+    expect(new Set(offer.options.map((option) => option.itemId))).toEqual(new Set(candidates));
+    expect(offer.rngCursor).toBe(5);
+  });
+
   it("rejects fewer than three unique candidates and invalid item ids", () => {
     expect(() => createMerchantOffer("seed", 0, ["sharp-sword", "sharp-sword"])).toThrow(/three unique/i);
     expect(() => createMerchantOffer("seed", 0, [...itemIds, "forged-item"])).toThrow(/invalid item/i);

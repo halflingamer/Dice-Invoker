@@ -43,7 +43,7 @@ export function createMerchantOffer(
 
   const stream = createNamedRollStream(seed, "reward", initialCursor);
   const selectOption = (index: number): MerchantOption => {
-    const selectedIndex = stream.roll(candidates.length) - 1;
+    const selectedIndex = candidates.length === 1 ? 0 : stream.roll(candidates.length) - 1;
     const [itemId] = candidates.splice(selectedIndex, 1);
     if (!itemId) throw new Error("item candidate is missing");
     return { offerId: `merchant-${initialCursor}-${index + 1}-${stream.roll(100)}`, itemId };
