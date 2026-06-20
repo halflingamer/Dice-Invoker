@@ -321,7 +321,9 @@ export function applyCommand(
       let heroHp = state.heroHp;
       let inventory = state.inventory;
       if (option.payload.kind === "gold") gold += applyGoldBonus(option.payload.amount, state.inventory);
-      if (option.payload.kind === "essence") essence += option.payload.amount;
+      if (option.payload.kind === "essence") {
+        essence = Math.min(state.maxEssence, essence + option.payload.amount);
+      }
       if (option.payload.kind === "item") ({ heroHp, inventory } = grantTreasureItem(state, option.payload.itemId));
       return {
         ...state, ...rememberRoomCommand(state, command.commandId), gold, essence, heroHp, inventory,

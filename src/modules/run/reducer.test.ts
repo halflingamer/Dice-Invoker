@@ -228,6 +228,9 @@ describe("run reducer", () => {
     expect(() => runCommandSchema.parse({
       type: "CHOOSE_EVENT_OPTION", offerId: "event-1", commandId: "event-1", damage: 0,
     })).toThrow();
+    expect(() => runCommandSchema.parse({
+      type: "CHOOSE_TREASURE", offerId: "treasure-1", commandId: "treasure-2", reward: "item",
+    })).toThrow();
   });
 
   it("creates authoritative room offers and blocks map routes", () => {
@@ -314,6 +317,66 @@ describe("run reducer", () => {
     expect(() => applyCommand(chosen, {
       type: "CHOOSE_TREASURE", offerId: offer.options[1].offerId, commandId: "take-twice",
     })).toThrow(/treasure/i);
+    expect(chosen.availableRoomIds).toEqual(base.map.layers[0]!.nodes[0]!.nextNodeIds);
+  });
+
+  it("clamps treasure essence at maxEssence", () => {
+    const base = createRun({ seed: "treasure-essence", heroId: "squire" });
+    const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const option = { ...generated.options[0], payload: { kind: "essence" as const, amount: 5 } };
+    const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
+    const run = { ...base, essence: 1, maxEssence: 2, currentRoomId: base.map.layers[0]!.nodes[0]!.id, pendingRoom: { kind: "treasure" as const, offer } };
+
+    const chosen = applyCommand(run, {
+      type: "CHOOSE_TREASURE", offerId: option.offerId, commandId: "take-essence",
+    });
+
+    expect(chosen.essence).toBe(2);
+  });
+
+  it("grants a treasure passive without charging gold", () => {
+    const base = createRun({ seed: "treasure-passive", heroId: "squire" });
+    const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const option = { ...generated.options[0], payload: { kind: "item" as const, itemId: "sharp-sword" as const } };
+    const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
+    const run = { ...base, currentRoomId: base.map.layers[0]!.nodes[0]!.id, pendingRoom: { kind: "treasure" as const, offer } };
+
+    const chosen = applyCommand(run, {
+      type: "CHOOSE_TREASURE", offerId: option.offerId, commandId: "take-passive",
+    });
+
+    expect(chosen.gold).toBe(run.gold);
+    expect(chosen.inventory).toContain("sharp-sword");
+  });
+
+  it("uses a treasure potion for free without storing it", () => {
+    const base = createRun({ seed: "treasure-potion", heroId: "squire" });
+    const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const option = { ...generated.options[0], payload: { kind: "item" as const, itemId: "healing-potion" as const } };
+    const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
+    const run = { ...base, heroHp: 20, currentRoomId: base.map.layers[0]!.nodes[0]!.id, pendingRoom: { kind: "treasure" as const, offer } };
+
+    const chosen = applyCommand(run, {
+      type: "CHOOSE_TREASURE", offerId: option.offerId, commandId: "take-potion",
+    });
+
+    expect(chosen.heroHp).toBe(24);
+    expect(chosen.gold).toBe(run.gold);
+    expect(chosen.inventory).not.toContain("healing-potion");
+  });
+
+  it("applies the tax amulet bonus to treasure gold", () => {
+    const base = createRun({ seed: "treasure-tax", heroId: "squire" });
+    const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
+    const option = { ...generated.options[0], payload: { kind: "gold" as const, amount: 10 } };
+    const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
+    const run = { ...base, inventory: ["tax-amulet" as const], currentRoomId: base.map.layers[0]!.nodes[0]!.id, pendingRoom: { kind: "treasure" as const, offer } };
+
+    const chosen = applyCommand(run, {
+      type: "CHOOSE_TREASURE", offerId: option.offerId, commandId: "take-tax-gold",
+    });
+
+    expect(chosen.gold).toBe(run.gold + 12);
   });
 
   it("keeps event result pending until acknowledgement", () => {
