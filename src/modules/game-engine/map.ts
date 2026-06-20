@@ -163,17 +163,31 @@ function isFair(layers: readonly LayerDraft[]): boolean {
   return !layers.at(-1)!.nodes.some((boss) => reachableWithoutRecovery.has(boss.id));
 }
 
-function applyFallback(layers: LayerDraft[], recoveryLayer: number) {
+export function createFallbackRoomTypes(
+  layerWidths: readonly number[],
+  recoveryLayer: number,
+): readonly (readonly RoomType[])[] {
   const alternating: readonly (readonly RoomType[])[] = [
     ["combat", "event", "treasure"],
     ["rest", "merchant", "elite"],
   ];
-  for (const layer of layers.slice(0, -1)) {
-    const types = layer.index === recoveryLayer
+  return layerWidths.map((width, layerOffset) => {
+    const layerIndex = layerOffset + 1;
+    const types = layerIndex === recoveryLayer
       ? (["rest", "merchant"] as const)
-      : alternating[Math.abs(layer.index - recoveryLayer) % alternating.length === 1 ? 0 : 1]!;
-    layer.nodes.forEach((node, index) => { node.type = types[index]!; });
-  }
+      : alternating[Math.abs(layerIndex - recoveryLayer) % alternating.length === 1 ? 0 : 1]!;
+    return Array.from({ length: width }, (_, nodeIndex) => types[nodeIndex % types.length]!);
+  });
+}
+
+function applyFallback(layers: LayerDraft[], recoveryLayer: number) {
+  const assignments = createFallbackRoomTypes(
+    layers.slice(0, -1).map((layer) => layer.nodes.length),
+    recoveryLayer,
+  );
+  layers.slice(0, -1).forEach((layer, layerIndex) => {
+    layer.nodes.forEach((node, nodeIndex) => { node.type = assignments[layerIndex]![nodeIndex]!; });
+  });
 }
 
 export function generateMap(input: GenerateMapInput): RunMap;
@@ -181,6 +195,17 @@ export function generateMap(input: GenerateMapInput): RunMap;
 export function generateMap(seed: string): RunMap;
 export function generateMap(input: GenerateMapInput | string): RunMap {
   const legacySeed = typeof input === "string";
+  if (!legacySeed) {
+    if (typeof input.seed !== "string" || input.seed.trim().length === 0) {
+      throw new Error("seed must not be empty");
+    }
+    if (!Number.isSafeInteger(input.phaseIndex) || input.phaseIndex < 1 || input.phaseIndex > 7) {
+      throw new Error("phaseIndex must be a safe integer between 1 and 7");
+    }
+    if (!Number.isSafeInteger(input.roomCount) || input.roomCount < 3 || input.roomCount > 9) {
+      throw new Error("roomCount must be a safe integer between 3 and 9");
+    }
+  }
   const { seed, phaseIndex, roomCount } = legacySeed
     ? { seed: input, phaseIndex: 1, roomCount: 9 }
     : input;

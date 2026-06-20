@@ -12,7 +12,7 @@ export type CampaignPhaseMap = Readonly<{
 export function createCampaignMaps(
   seed: string,
   phases: readonly DungeonPhase[],
-): CampaignPhaseMap[] {
+): readonly CampaignPhaseMap[] {
   return phases.map((phase) => ({
     phaseId: phase.id,
     phaseIndex: phase.index,

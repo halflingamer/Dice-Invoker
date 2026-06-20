@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateMap, type MapNode, type RunMap } from "./map";
+import { createFallbackRoomTypes, generateMap, type MapNode, type RoomType, type RunMap } from "./map";
 
 function enumeratePaths(map: RunMap): MapNode[][] {
   const nodes = new Map(map.layers.flatMap((layer) => layer.nodes.map((node) => [node.id, node])));
@@ -17,6 +17,60 @@ function enumeratePaths(map: RunMap): MapNode[][] {
 }
 
 describe("generateMap", () => {
+  it("produces deterministic fair room assignments for the fallback path", () => {
+    const createUnfairLayers = () => generateMap({ seed: "fallback-seed", phaseIndex: 3, roomCount: 5 }).layers.map((layer) => ({
+      index: layer.index,
+      nodes: layer.nodes.map((node) => ({
+        ...node,
+        type: (node.type === "boss" ? "boss" : "combat") as RoomType,
+        nextNodeIds: [...node.nextNodeIds],
+      })),
+    }));
+    const first = createUnfairLayers();
+    const second = createUnfairLayers();
+    const layerWidths = first.slice(0, -1).map((layer) => layer.nodes.length);
+    const firstTypes = createFallbackRoomTypes(layerWidths, 3);
+    const secondTypes = createFallbackRoomTypes(layerWidths, 3);
+
+    first.slice(0, -1).forEach((layer, layerIndex) => layer.nodes.forEach((node, nodeIndex) => {
+      node.type = firstTypes[layerIndex]![nodeIndex]!;
+    }));
+    second.slice(0, -1).forEach((layer, layerIndex) => layer.nodes.forEach((node, nodeIndex) => {
+      node.type = secondTypes[layerIndex]![nodeIndex]!;
+    }));
+
+    expect(firstTypes).toEqual(secondTypes);
+    expect(first).toEqual(second);
+    const map: RunMap = { layers: first, rngCursor: 0 };
+    for (const path of enumeratePaths(map)) {
+      const choices = path.slice(0, -1);
+      expect(choices.some((node) => node.type === "rest" || node.type === "merchant")).toBe(true);
+      expect(choices.some((node, index) => node.type === "elite" && choices[index + 1]?.type === "elite")).toBe(false);
+      expect(choices.some((node, index) => node.type === choices[index + 1]?.type && node.type === choices[index + 2]?.type)).toBe(false);
+    }
+  });
+
+  it.each(["", "   "])("rejects an invalid canonical seed before other inputs: %j", (seed) => {
+    expect(() => generateMap({ seed, phaseIndex: 0, roomCount: 0 })).toThrow("seed must not be empty");
+  });
+
+  it.each([0, 8, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid phaseIndex %s", (phaseIndex) => {
+    expect(() => generateMap({ seed: "valid-seed", phaseIndex, roomCount: 0 })).toThrow(
+      "phaseIndex must be a safe integer between 1 and 7",
+    );
+  });
+
+  it.each([2, 10, 3.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid roomCount %s", (roomCount) => {
+    expect(() => generateMap({ seed: "valid-seed", phaseIndex: 1, roomCount })).toThrow(
+      "roomCount must be a safe integer between 3 and 9",
+    );
+  });
+
+  it("retains legacy whitespace seeds but rejects a truly empty legacy seed", () => {
+    expect(() => generateMap("")).toThrow("seed must not be empty");
+    expect(() => generateMap("   ")).not.toThrow();
+  });
+
   it("preserves the legacy string-seed map contract", () => {
     const map = generateMap("legacy-contract-seed");
     expect(map.layers.map((layer) => layer.nodes.map((node) => node.type))).toEqual([
