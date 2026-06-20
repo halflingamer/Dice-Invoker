@@ -1,5 +1,13 @@
 import type { ClassStage } from "@/modules/content/schema";
-import type { ClassCombatDice, CombatDieKind, CombatDieResult, TurnInput, TurnResult } from "./types";
+import type {
+  ClassCombatDice,
+  CombatDieKind,
+  CombatDieResult,
+  CombatExchangeInput,
+  CombatExchangeResult,
+  TurnInput,
+  TurnResult,
+} from "./types";
 
 export function rollClassCombatDie(
   stage: ClassStage,
@@ -35,6 +43,27 @@ function assertNonNegativeInteger(label: string, value: number) {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative safe integer`);
   }
+}
+
+export function resolveCombatExchange(input: CombatExchangeInput): CombatExchangeResult {
+  for (const [label, value] of Object.entries(input)) {
+    assertNonNegativeInteger(label, value);
+  }
+
+  const damageDealt = input.heroDamage;
+  const enemyHp = Math.max(0, input.enemyHp - damageDealt);
+  const victory = enemyHp === 0;
+  const damageTaken = victory ? 0 : Math.max(0, input.enemyAttack - input.heroDefense);
+  const heroHp = Math.max(0, input.heroHp - damageTaken);
+
+  return {
+    heroHp,
+    enemyHp,
+    damageDealt,
+    damageTaken,
+    victory,
+    defeat: heroHp === 0,
+  };
 }
 
 export function resolveTurn(input: TurnInput): TurnResult {

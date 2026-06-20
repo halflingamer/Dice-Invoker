@@ -15,6 +15,23 @@ export type ClassCombatDice = Readonly<{
   defense: CombatDieResult;
 }>;
 
+export type CombatExchangeInput = Readonly<{
+  heroHp: number;
+  enemyHp: number;
+  heroDamage: number;
+  heroDefense: number;
+  enemyAttack: number;
+}>;
+
+export type CombatExchangeResult = Readonly<{
+  heroHp: number;
+  enemyHp: number;
+  damageDealt: number;
+  damageTaken: number;
+  victory: boolean;
+  defeat: boolean;
+}>;
+
 export type TurnInput = Readonly<{
   heroHp: number;
   heroMaxHp: number;
