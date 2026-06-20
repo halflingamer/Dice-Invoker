@@ -1,14 +1,17 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { useAutoCombat } from "./use-auto-combat";
 
-function Harness({ encounterId = "room-1-1", enemyRank = "elite", initialEnemyHp = 20 }: Readonly<{
+function Harness({ encounterId = "room-1-1", enemyRank = "elite", initialEnemyHp = 20, onHeroHpChange }: Readonly<{
   encounterId?: string | null;
   enemyRank?: "normal" | "elite" | "boss";
   initialEnemyHp?: number;
+  onHeroHpChange?(heroHp: number): void;
 }>) {
   const combat = useAutoCombat({
-    encounterId, initialEnemyHp, initialHeroHp: 10, sides: 4, enemyRank, onVictory: () => undefined,
+    encounterId, initialEnemyHp, initialHeroHp: 10, sides: 4, enemyRank,
+    onHeroHpChange, onVictory: () => undefined,
   });
   return <div><span>{combat.phase}</span><span>HP {combat.enemyHp}</span><span>Hero {combat.heroHp}</span><span>Dano {combat.damage.value}</span><span>Inimigo D{combat.enemyAttack.sides}: {combat.enemyAttack.result}</span><span>{combat.message}</span></div>;
 }
@@ -65,5 +68,30 @@ describe("useAutoCombat", () => {
     resolveOneTurn();
     expect(screen.getByText("Hero 10")).toBeInTheDocument();
     expect(screen.getByText(/recebeu 0/i)).toBeInTheDocument();
+  });
+
+  it("reports resolved hero HP to the presentation owner", () => {
+    const onHeroHpChange = vi.fn();
+    render(<Harness enemyRank="boss" onHeroHpChange={onHeroHpChange} />);
+    resolveOneTurn();
+    expect(onHeroHpChange).toHaveBeenCalledWith(8);
+  });
+
+  it("starts the next encounter from the HP persisted by its owner", () => {
+    function Owner() {
+      const [encounterId, setEncounterId] = useState("first");
+      const [heroHp, setHeroHp] = useState(10);
+      const combat = useAutoCombat({
+        encounterId, initialEnemyHp: 20, initialHeroHp: heroHp, sides: 4,
+        enemyRank: "boss", onHeroHpChange: setHeroHp, onVictory: () => undefined,
+      });
+      return <div><span>Hero {combat.heroHp}</span><button onClick={() => setEncounterId("second")}>Próximo</button></div>;
+    }
+
+    render(<Owner />);
+    resolveOneTurn();
+    expect(screen.getByText("Hero 8")).toBeInTheDocument();
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Próximo" })));
+    expect(screen.getByText("Hero 8")).toBeInTheDocument();
   });
 });

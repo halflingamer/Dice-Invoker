@@ -43,6 +43,7 @@ export function useAutoCombat({
   initialHeroHp = 24,
   sides,
   enemyRank = "normal",
+  onHeroHpChange,
   onVictory,
 }: Readonly<{
   encounterId: string | null;
@@ -50,6 +51,7 @@ export function useAutoCombat({
   initialHeroHp?: number;
   sides: ClassDieSides;
   enemyRank?: EnemyRank;
+  onHeroHpChange?(heroHp: number): void;
   onVictory(): void;
 }>) {
   const [phase, setPhase] = useState<AutoCombatPhase>(encounterId ? "rolling" : "idle");
@@ -62,22 +64,26 @@ export function useAutoCombat({
   const [enemyAttack, setEnemyAttack] = useState(() => enemyAttackForTurn(1, enemyRank));
   const [message, setMessage] = useState("");
   const onVictoryRef = useRef(onVictory);
+  const onHeroHpChangeRef = useRef(onHeroHpChange);
+  const initialHeroHpRef = useRef(initialHeroHp);
 
   useEffect(() => { onVictoryRef.current = onVictory; }, [onVictory]);
+  useEffect(() => { onHeroHpChangeRef.current = onHeroHpChange; }, [onHeroHpChange]);
+  useEffect(() => { initialHeroHpRef.current = initialHeroHp; }, [initialHeroHp]);
 
   useEffect(() => {
     // A new encounter is a state-machine boundary: every combat resource must reset atomically.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTurn(1);
     setEnemyHp(initialEnemyHp);
-    setHeroHp(initialHeroHp);
+    setHeroHp(initialHeroHpRef.current);
     setEssence(2);
     setWon(false);
     setDice(diceForTurn(1, sides));
     setEnemyAttack(enemyAttackForTurn(1, enemyRank));
     setMessage("");
     setPhase(encounterId ? "rolling" : "idle");
-  }, [encounterId, enemyRank, initialEnemyHp, initialHeroHp, sides]);
+  }, [encounterId, enemyRank, initialEnemyHp, sides]);
 
   useEffect(() => {
     if (phase === "idle") return;
@@ -110,6 +116,7 @@ export function useAutoCombat({
         });
         setEnemyHp(result.enemyHp);
         setHeroHp(result.heroHp);
+        onHeroHpChangeRef.current?.(result.heroHp);
         setWon(result.victory);
         const blocked = result.victory ? 0 : Math.min(dice.defense.value, enemyAttack.result);
         setMessage(`Ataque causou ${result.damageDealt}; defesa bloqueou ${blocked}; recebeu ${result.damageTaken}.`);

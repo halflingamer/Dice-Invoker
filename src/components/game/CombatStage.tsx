@@ -29,6 +29,8 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
   const [combatActive, setCombatActive] = useState(false);
   const [enemyMaxHp, setEnemyMaxHp] = useState(18);
   const [enemyName, setEnemyName] = useState("Aguardando destino");
+  const [enemyRank, setEnemyRank] = useState<"normal" | "elite" | "boss">("normal");
+  const [heroHp, setHeroHp] = useState(24);
   const [classSides, setClassSides] = useState<4 | 6>(4);
   const [className, setClassName] = useState("Escudeiro");
   const [promotionOpen, setPromotionOpen] = useState(false);
@@ -50,7 +52,10 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
   const combat = useAutoCombat({
     encounterId: combatActive ? route.currentRoomId : null,
     initialEnemyHp: enemyMaxHp,
+    initialHeroHp: heroHp,
     sides: classSides,
+    enemyRank,
+    onHeroHpChange: setHeroHp,
     onVictory: finishCombat,
   });
 
@@ -69,6 +74,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       const rank = node.type as "combat" | "elite" | "boss";
       setEnemyMaxHp(ENEMY_HP[rank]);
       setEnemyName(ENEMY_NAME[rank]);
+      setEnemyRank(rank === "combat" ? "normal" : rank);
       setCombatActive(true);
       setMessage("Os dados de dano e defesa foram invocados.");
     } else {
@@ -97,7 +103,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       : combat.phase === "resolving"
         ? "Resolvendo dano e defesa…"
         : combat.phase === "presenting"
-          ? `Ataque causou ${combat.damage.value}; defesa bloqueou ${combat.defense.value}.`
+          ? combat.message
           : message;
 
   return (
@@ -111,7 +117,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
         <HeroSheet />
         <section className="battle-column">
           <header className="combat-header">
-            <div><b>{className} D{classSides}</b><span>♥ 24/24</span></div>
+            <div><b>{className} D{classSides}</b><span>♥ {combat.heroHp}/24</span></div>
             <div className="room-progress"><b>Sala {route.visitedRoomIds.length}/10</b><span>XP da run · evolução temporária</span></div>
             <div className="enemy"><b>{enemyName}</b><span>♥ {combat.enemyHp}/{enemyMaxHp}</span></div>
           </header>
