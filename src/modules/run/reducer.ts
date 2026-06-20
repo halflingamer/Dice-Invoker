@@ -1,9 +1,9 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
-import { rollClassCombatDice, rollClassCombatDie, resolveTurn } from "@/modules/game-engine/combat";
+import { rollClassCombatDice, rollClassCombatDie, resolveCombatExchange } from "@/modules/game-engine/combat";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { createEventOffer, resolveEventChoice } from "@/modules/game-engine/events";
-import { RUN_ITEMS, applyGoldBonus, purchaseItem, type RunItemId } from "@/modules/game-engine/economy";
+import { RUN_ITEMS, applyCombatBonuses, applyGoldBonus, purchaseItem, type RunItemId } from "@/modules/game-engine/economy";
 import { chooseMerchantItem, chooseReward, chooseTreasureReward, createMerchantOffer, createTreasureOffer } from "@/modules/game-engine/rewards";
 import { applyPromotion, awardExperience, getPromotionChoices } from "@/modules/game-engine/progression";
 import { runCommandSchema, type RunCommand } from "./command-schema";
@@ -13,6 +13,7 @@ const season = loadSeason(seasonOne);
 const diceById = new Map(season.dice.map((die) => [die.id, die]));
 const INTERVENTION_WINDOW_MS = 2_500;
 const ROOM_XP = { combat: 35, elite: 65, treasure: 20, merchant: 20, event: 30, rest: 20, boss: 100 } as const;
+const COMBAT_GOLD = { combat: 3, elite: 7, boss: 15 } as const;
 
 type CommandContext = Readonly<{ now(): number }>;
 
@@ -42,6 +43,13 @@ function nextRoomIds(state: RunState): readonly string[] {
     ? state.map.layers.flatMap((layer) => layer.nodes).find((candidate) => candidate.id === state.currentRoomId)
     : undefined;
   return [...(node?.nextNodeIds ?? [])];
+}
+
+function currentCombatRank(state: RunState): keyof typeof COMBAT_GOLD {
+  const type = state.currentRoomId
+    ? state.map.layers.flatMap((layer) => layer.nodes).find((node) => node.id === state.currentRoomId)?.type
+    : undefined;
+  return type === "elite" || type === "boss" ? type : "combat";
 }
 
 function grantTreasureItem(state: RunState, itemId: RunItemId): Pick<RunState, "heroHp" | "inventory"> {
@@ -90,6 +98,7 @@ export function applyCommand(
       if (!stage) throw new Error("current class stage is missing");
       const stream = createNamedRollStream(state.seed, "combat", state.rngCursors.combat);
       const dice = rollClassCombatDice(stage, (sides) => stream.roll(sides));
+      const enemySides = ({ combat: 4, elite: 6, boss: 8 } as const)[currentCombatRank(state)];
       return {
         ...state,
         sequence: command.sequence,
@@ -98,6 +107,7 @@ export function applyCommand(
         combatTurn: {
           turn: state.combatRound + 1,
           ...dice,
+          enemyAttack: { sides: enemySides, result: stream.roll(enemySides) },
           interventionEndsAt: context.now() + INTERVENTION_WINDOW_MS,
           rerolledDieKinds: [],
         },
@@ -136,18 +146,22 @@ export function applyCommand(
       if (context.now() < state.combatTurn.interventionEndsAt) {
         throw new Error("combat intervention window is still active");
       }
-      const enemy = season.enemies.find((candidate) => candidate.id === state.enemyId);
-      if (!enemy) throw new Error("combat enemy is missing");
-      const result = resolveTurn({
-        heroHp: state.heroHp,
-        heroMaxHp: state.heroMaxHp,
+      const stats = applyCombatBonuses({
+        damage: state.combatTurn.damage.value,
+        defense: state.combatTurn.defense.value,
+      }, state.inventory);
+      const healedHeroHp = Math.min(
+        state.heroMaxHp,
+        state.heroHp + state.combatTurn.damage.healing + state.combatTurn.defense.healing,
+      );
+      const result = resolveCombatExchange({
+        heroHp: healedHeroHp,
         enemyHp: state.enemyHp,
-        block: state.combatTurn.defense.value,
-        heroDamage: state.combatTurn.damage.value,
-        enemyDamage: enemy.damage,
-        healing: state.combatTurn.damage.healing + state.combatTurn.defense.healing,
+        heroDamage: stats.damage,
+        heroDefense: stats.defense,
+        enemyAttack: state.combatTurn.enemyAttack.result,
       });
-      if (result.outcome === "ongoing") {
+      if (!result.victory && !result.defeat) {
         return {
           ...state,
           sequence: command.sequence,
@@ -157,7 +171,7 @@ export function applyCommand(
           combatTurn: null,
         };
       }
-      if (result.outcome === "defeat") {
+      if (result.defeat) {
         return {
           ...state,
           sequence: command.sequence,
@@ -177,6 +191,7 @@ export function applyCommand(
       );
       const promotionChoices = getPromotionChoices(progressed, season.classStages, { roomResolved: true });
       const completedRun = currentNode?.type === "boss" || state.currentLayer === state.map.layers.length;
+      const goldReward = applyGoldBonus(COMBAT_GOLD[currentCombatRank(state)], state.inventory);
       return {
         ...state,
         sequence: command.sequence,
@@ -184,6 +199,7 @@ export function applyCommand(
         heroHp: result.heroHp,
         enemyHp: 0,
         combatTurn: null,
+        gold: state.gold + goldReward,
         xp: progressed.xp,
         pendingPromotionIds: promotionChoices.map((stage) => stage.id),
         availableRoomIds: completedRun ? [] : [...(currentNode?.nextNodeIds ?? [])],

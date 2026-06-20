@@ -176,6 +176,104 @@ describe("run reducer", () => {
     expect(["room-choice", "promotion", "complete"]).toContain(resolved.phase);
   });
 
+  it.each([
+    ["combat", 4],
+    ["elite", 6],
+    ["boss", 8],
+  ] as const)("rolls a D%s enemy attack from the current room rank", (roomType, sides) => {
+    const base = readyToRollRun();
+    const map = {
+      ...base.map,
+      layers: base.map.layers.map((layer) => ({
+        ...layer,
+        nodes: layer.nodes.map((node) => node.id === base.currentRoomId ? { ...node, type: roomType } : node),
+      })),
+    };
+
+    const rolling = applyCommand({ ...base, map }, { type: "BEGIN_COMBAT_TURN", sequence: 1 }, at(1_000));
+
+    expect(rolling.combatTurn?.enemyAttack.sides).toBe(sides);
+    expect(rolling.combatTurn?.enemyAttack.result).toBeGreaterThanOrEqual(1);
+    expect(rolling.combatTurn?.enemyAttack.result).toBeLessThanOrEqual(sides);
+  });
+
+  it("applies inventory bonuses and defense mitigation while persisting hero HP", () => {
+    const run = {
+      ...readyToRollRun(),
+      heroHp: 20,
+      enemyHp: 20,
+      inventory: ["sharp-sword", "reinforced-shield"] as const,
+      phase: "combat-intervention" as const,
+      combatTurn: {
+        turn: 1,
+        damage: { kind: "damage" as const, sides: 4 as const, faceIndex: 3, label: "Golpe", value: 3, healing: 0 },
+        defense: { kind: "defense" as const, sides: 4 as const, faceIndex: 2, label: "Aparar", value: 2, healing: 0 },
+        enemyAttack: { sides: 4 as const, result: 4 },
+        interventionEndsAt: 3_500,
+        rerolledDieKinds: [],
+      },
+    };
+
+    const resolved = applyCommand(run, { type: "RESOLVE_COMBAT_TURN", sequence: 1 }, at(3_500));
+
+    expect(resolved.enemyHp).toBe(16);
+    expect(resolved.heroHp).toBe(19);
+  });
+
+  it("prevents the enemy counterattack on victory and awards rank gold once", () => {
+    const base = readyToRollRun();
+    const run = {
+      ...base,
+      map: {
+        ...base.map,
+        layers: base.map.layers.map((layer) => ({
+          ...layer,
+          nodes: layer.nodes.map((node) => node.id === base.currentRoomId ? { ...node, type: "elite" as const } : node),
+        })),
+      },
+      heroHp: 7,
+      enemyHp: 3,
+      gold: 0,
+      inventory: ["tax-amulet"] as const,
+      phase: "combat-intervention" as const,
+      combatTurn: {
+        turn: 1,
+        damage: { kind: "damage" as const, sides: 4 as const, faceIndex: 3, label: "Golpe", value: 3, healing: 0 },
+        defense: { kind: "defense" as const, sides: 4 as const, faceIndex: 1, label: "Aparar", value: 0, healing: 0 },
+        enemyAttack: { sides: 4 as const, result: 4 },
+        interventionEndsAt: 3_500,
+        rerolledDieKinds: [],
+      },
+    };
+
+    const resolved = applyCommand(run, { type: "RESOLVE_COMBAT_TURN", sequence: 1 }, at(3_500));
+
+    expect(resolved.heroHp).toBe(7);
+    expect(resolved.gold).toBe(8);
+    expect(() => applyCommand(resolved, { type: "RESOLVE_COMBAT_TURN", sequence: 2 }, at(4_000))).toThrow();
+  });
+
+  it("ends the run when an enemy attack reduces persistent hero HP to zero", () => {
+    const run = {
+      ...readyToRollRun(),
+      heroHp: 2,
+      enemyHp: 20,
+      phase: "combat-intervention" as const,
+      combatTurn: {
+        turn: 1,
+        damage: { kind: "damage" as const, sides: 4 as const, faceIndex: 1, label: "Golpe", value: 1, healing: 0 },
+        defense: { kind: "defense" as const, sides: 4 as const, faceIndex: 1, label: "Aparar", value: 0, healing: 0 },
+        enemyAttack: { sides: 4 as const, result: 4 },
+        interventionEndsAt: 3_500,
+        rerolledDieKinds: [],
+      },
+    };
+
+    const resolved = applyCommand(run, { type: "RESOLVE_COMBAT_TURN", sequence: 1 }, at(3_500));
+
+    expect(resolved).toMatchObject({ phase: "complete", heroHp: 0, enemyHp: 19 });
+  });
+
   it("rejects reroll before roll and spends essence exactly once", () => {
     const run = readyToRollRun();
 

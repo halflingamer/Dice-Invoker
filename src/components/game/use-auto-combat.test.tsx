@@ -1,15 +1,27 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCombat } from "./use-auto-combat";
 
-function Harness({ encounterId = "room-1-1" }: Readonly<{ encounterId?: string | null }>) {
-  const combat = useAutoCombat({ encounterId, initialEnemyHp: 20, sides: 4, onVictory: () => undefined });
-  return <div><span>{combat.phase}</span><span>HP {combat.enemyHp}</span><span>Dano {combat.damage.value}</span></div>;
+function Harness({ encounterId = "room-1-1", enemyRank = "elite", initialEnemyHp = 20 }: Readonly<{
+  encounterId?: string | null;
+  enemyRank?: "normal" | "elite" | "boss";
+  initialEnemyHp?: number;
+}>) {
+  const combat = useAutoCombat({
+    encounterId, initialEnemyHp, initialHeroHp: 10, sides: 4, enemyRank, onVictory: () => undefined,
+  });
+  return <div><span>{combat.phase}</span><span>HP {combat.enemyHp}</span><span>Hero {combat.heroHp}</span><span>Dano {combat.damage.value}</span><span>Inimigo D{combat.enemyAttack.sides}: {combat.enemyAttack.result}</span><span>{combat.message}</span></div>;
 }
 
 describe("useAutoCombat", () => {
   beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+  const resolveOneTurn = () => {
+    act(() => vi.advanceTimersByTime(650));
+    act(() => vi.advanceTimersByTime(2_500));
+    act(() => vi.advanceTimersByTime(250));
+  };
 
   it("rolls, pauses, resolves, presents, and starts the next turn automatically", () => {
     render(<Harness />);
@@ -32,5 +44,26 @@ describe("useAutoCombat", () => {
   it("stays idle when there is no combat encounter", () => {
     render(<Harness encounterId={null} />);
     expect(screen.getByText("idle")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["normal", 4], ["elite", 6], ["boss", 8],
+  ] as const)("uses a %s enemy attack die", (enemyRank, sides) => {
+    const { container } = render(<Harness enemyRank={enemyRank} />);
+    expect(within(container).getByText(new RegExp(`Inimigo D${sides}: [1-${sides}]`))).toBeInTheDocument();
+  });
+
+  it("resolves damage, block, and damage received in the same cycle", () => {
+    render(<Harness enemyRank="boss" />);
+    resolveOneTurn();
+    expect(screen.getByText(/causou \d+; defesa bloqueou \d+; recebeu \d+/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hero [0-9]+/)).toBeInTheDocument();
+  });
+
+  it("does not take enemy damage when the hero wins", () => {
+    render(<Harness enemyRank="boss" initialEnemyHp={1} />);
+    resolveOneTurn();
+    expect(screen.getByText("Hero 10")).toBeInTheDocument();
+    expect(screen.getByText(/recebeu 0/i)).toBeInTheDocument();
   });
 });

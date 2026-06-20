@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CombatDieKind, CombatDieResult } from "@/modules/game-engine/types";
-import type { CombatPresentationPhase } from "./CombatDiceOverlay";
+import { resolveCombatExchange } from "@/modules/game-engine/combat";
+import type { CombatPresentationPhase, EnemyAttackDie } from "./CombatDiceOverlay";
 
 type AutoCombatPhase = CombatPresentationPhase | "idle";
 type ClassDieSides = 4 | 6 | 8 | 10 | 12;
+type EnemyRank = "normal" | "elite" | "boss";
+
+function enemyAttackForTurn(turn: number, rank: EnemyRank): EnemyAttackDie {
+  const sides = ({ normal: 4, elite: 6, boss: 8 } as const)[rank];
+  return { sides, result: (turn * 5 % sides) + 1 };
+}
 
 function diceForTurn(turn: number, sides: ClassDieSides) {
   const damageFace = (turn * 2 % sides) + 1;
@@ -33,20 +40,27 @@ function diceForTurn(turn: number, sides: ClassDieSides) {
 export function useAutoCombat({
   encounterId,
   initialEnemyHp,
+  initialHeroHp = 24,
   sides,
+  enemyRank = "normal",
   onVictory,
 }: Readonly<{
   encounterId: string | null;
   initialEnemyHp: number;
+  initialHeroHp?: number;
   sides: ClassDieSides;
+  enemyRank?: EnemyRank;
   onVictory(): void;
 }>) {
   const [phase, setPhase] = useState<AutoCombatPhase>(encounterId ? "rolling" : "idle");
   const [turn, setTurn] = useState(1);
   const [enemyHp, setEnemyHp] = useState(initialEnemyHp);
+  const [heroHp, setHeroHp] = useState(initialHeroHp);
   const [essence, setEssence] = useState(2);
   const [won, setWon] = useState(false);
   const [dice, setDice] = useState(() => diceForTurn(1, sides));
+  const [enemyAttack, setEnemyAttack] = useState(() => enemyAttackForTurn(1, enemyRank));
+  const [message, setMessage] = useState("");
   const onVictoryRef = useRef(onVictory);
 
   useEffect(() => { onVictoryRef.current = onVictory; }, [onVictory]);
@@ -56,11 +70,14 @@ export function useAutoCombat({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTurn(1);
     setEnemyHp(initialEnemyHp);
+    setHeroHp(initialHeroHp);
     setEssence(2);
     setWon(false);
     setDice(diceForTurn(1, sides));
+    setEnemyAttack(enemyAttackForTurn(1, enemyRank));
+    setMessage("");
     setPhase(encounterId ? "rolling" : "idle");
-  }, [encounterId, initialEnemyHp, sides]);
+  }, [encounterId, enemyRank, initialEnemyHp, initialHeroHp, sides]);
 
   useEffect(() => {
     if (phase === "idle") return;
@@ -84,11 +101,18 @@ export function useAutoCombat({
         return;
       }
       if (phase === "resolving") {
-        setEnemyHp((current) => {
-          const remaining = Math.max(0, current - dice.damage.value);
-          setWon(remaining === 0);
-          return remaining;
+        const result = resolveCombatExchange({
+          heroHp,
+          enemyHp,
+          heroDamage: dice.damage.value,
+          heroDefense: dice.defense.value,
+          enemyAttack: enemyAttack.result,
         });
+        setEnemyHp(result.enemyHp);
+        setHeroHp(result.heroHp);
+        setWon(result.victory);
+        const blocked = result.victory ? 0 : Math.min(dice.defense.value, enemyAttack.result);
+        setMessage(`Ataque causou ${result.damageDealt}; defesa bloqueou ${blocked}; recebeu ${result.damageTaken}.`);
         setPhase("presenting");
         return;
       }
@@ -100,10 +124,11 @@ export function useAutoCombat({
       const nextTurn = turn + 1;
       setTurn(nextTurn);
       setDice(diceForTurn(nextTurn, sides));
+      setEnemyAttack(enemyAttackForTurn(nextTurn, enemyRank));
       setPhase("rolling");
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [dice.damage.value, phase, sides, turn, won]);
+  }, [dice.damage.value, dice.defense.value, enemyAttack.result, enemyHp, enemyRank, heroHp, phase, sides, turn, won]);
 
   const reroll = useCallback((kind: CombatDieKind) => {
     if (phase !== "intervention" || essence < 1) return;
@@ -123,5 +148,5 @@ export function useAutoCombat({
     });
   }, [essence, phase]);
 
-  return { phase, turn, enemyHp, essence, ...dice, reroll };
+  return { phase, turn, enemyHp, heroHp, essence, enemyAttack, message, ...dice, reroll };
 }

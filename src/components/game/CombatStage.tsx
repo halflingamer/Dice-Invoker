@@ -121,6 +121,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
               phase={combat.phase}
               damage={combat.damage}
               defense={combat.defense}
+              enemyAttack={combat.enemyAttack}
               essence={combat.essence}
               onReroll={reroll}
             />
