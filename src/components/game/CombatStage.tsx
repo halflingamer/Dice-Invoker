@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { seasonOne } from "@/modules/content/season-1";
-import { purchaseItem, RUN_ITEMS, type RunItemId } from "@/modules/game-engine/economy";
+import { purchaseLegacyItem, RUN_ITEMS, type RunItemId } from "@/modules/game-engine/economy";
 import { createEventOffer, resolveEventChoice, type EventChoiceResult, type EventOffer } from "@/modules/game-engine/events";
 import type { RunMap as RunMapModel, RoomType } from "@/modules/game-engine/map";
 import {
@@ -161,7 +161,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
     if (!pendingRoom || pendingRoom.kind !== "merchant") return;
     try {
       const option = chooseMerchantItem(pendingRoom.offer, offerId);
-      const purchased = purchaseItem({ gold, heroHp, heroMaxHp: 24, inventory }, option.itemId);
+      const purchased = purchaseLegacyItem({ gold, heroHp, heroMaxHp: 24, inventory }, option.itemId);
       setGold(purchased.gold);
       setHeroHp(purchased.heroHp);
       setInventory(purchased.inventory);

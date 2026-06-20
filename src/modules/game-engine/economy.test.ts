@@ -7,6 +7,7 @@ import {
   applyGoldBonus,
   consumeItem,
   equipItem,
+  purchaseLegacyItem,
   purchaseItem,
   unequipItem,
   type EquippedSlots,
@@ -24,10 +25,11 @@ const inventoryState = (overrides: Partial<InventoryState> = {}): InventoryState
 describe("RUN_ITEMS", () => {
   it("defines the official immutable catalog and slots", () => {
     expect(RUN_ITEMS).toEqual({
-      "sharp-sword": { id: "sharp-sword", name: "Espada Afiada", price: 8, kind: "passive", slot: "weapon" },
-      "reinforced-shield": { id: "reinforced-shield", name: "Escudo Reforçado", price: 8, kind: "passive", slot: "armor" },
-      "healing-potion": { id: "healing-potion", name: "Poção", price: 6, kind: "consumable", slot: "consumable" },
-      "tax-amulet": { id: "tax-amulet", name: "Amuleto Fiscal", price: 12, kind: "passive", slot: "accessory" },
+      "sharp-sword": { id: "sharp-sword", name: "Espada Afiada", price: 8, kind: "passive", slot: "weapon", effect: { attack: 1 } },
+      "dented-spear": { id: "dented-spear", name: "Lança Amassada", price: 7, kind: "passive", slot: "weapon", effect: { attack: 1 } },
+      "reinforced-shield": { id: "reinforced-shield", name: "Escudo Reforçado", price: 8, kind: "passive", slot: "armor", effect: { defense: 1 } },
+      "healing-potion": { id: "healing-potion", name: "Poção", price: 6, kind: "consumable", slot: "consumable", effect: { heal: 6 } },
+      "tax-amulet": { id: "tax-amulet", name: "Amuleto Fiscal", price: 12, kind: "passive", slot: "accessory", effect: { goldPercent: 20 } },
     });
     expect(Object.isFrozen(RUN_ITEMS)).toBe(true);
     expect(Object.values(RUN_ITEMS).every(Object.isFrozen)).toBe(true);
@@ -35,6 +37,11 @@ describe("RUN_ITEMS", () => {
 });
 
 describe("canonical purchaseItem", () => {
+  it("rejects legacy purchase state instead of auto-healing", () => {
+    expect(() => purchaseItem({ gold: 12, heroHp: 18, heroMaxHp: 24, inventory: [] } as never, "healing-potion"))
+      .toThrow("invalid consumable stacks");
+  });
+
   it("charges the official price and stores equipment without applying it", () => {
     const state = { gold: 12, ...inventoryState() };
     const result = purchaseItem(state, "sharp-sword");
@@ -54,6 +61,16 @@ describe("canonical purchaseItem", () => {
     expect(purchaseItem(potionState, "healing-potion").consumables).toEqual({ "healing-potion": 2 });
     expect(() => purchaseItem({ gold: 10, ...inventoryState({ inventory: ["sharp-sword"] }) }, "sharp-sword"))
       .toThrow("nonconsumable already owned");
+  });
+
+  it("rejects an unknown item and insufficient gold", () => {
+    expect(() => purchaseItem({ gold: 12, ...inventoryState() }, "missing-item")).toThrow("invalid item id");
+    expect(() => purchaseItem({ gold: 7, ...inventoryState() }, "sharp-sword")).toThrow("not enough gold");
+  });
+
+  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid canonical gold %s", (gold) => {
+    expect(() => purchaseItem({ gold, ...inventoryState() }, "healing-potion"))
+      .toThrow("gold must be a non-negative safe integer");
   });
 
   it("validates balances, inventory and stacks", () => {
@@ -79,17 +96,14 @@ describe("canonical purchaseItem", () => {
 });
 
 describe("equipment", () => {
-  const owned = inventoryState({ inventory: ["sharp-sword", "reinforced-shield", "tax-amulet"] });
+  const owned = inventoryState({ inventory: ["sharp-sword", "dented-spear", "reinforced-shield", "tax-amulet"] });
 
-  it("uses the official slot and replaces one item per slot while retaining ownership", () => {
+  it("replaces a weapon with a distinct owned weapon while retaining both", () => {
     const sword = equipItem(owned, "aria", "sharp-sword");
     expect(sword.equipment.aria.weapon).toBe("sharp-sword");
-    expect(equipItem(sword, "aria", "sharp-sword").equipment.aria).toEqual({
-      weapon: "sharp-sword",
-      armor: null,
-      accessory: null,
-    });
-    expect(sword.inventory).toEqual(["sharp-sword", "reinforced-shield", "tax-amulet"]);
+    const spear = equipItem(sword, "aria", "dented-spear");
+    expect(spear.equipment.aria.weapon).toBe("dented-spear");
+    expect(spear.inventory).toEqual(["sharp-sword", "dented-spear", "reinforced-shield", "tax-amulet"]);
   });
 
   it("rejects a forged expected slot", () => {
@@ -161,11 +175,50 @@ describe("applyEquipmentBonuses", () => {
 });
 
 describe("legacy compatibility wrappers", () => {
-  it("preserves current consumers until they migrate", () => {
+  const legacy = { gold: 12, heroHp: 18, heroMaxHp: 24, inventory: [] as const };
+
+  it("preserves explicitly named legacy purchase behavior until consumers migrate", () => {
     expect(applyCombatBonuses({ damage: 3, defense: 2 }, ["sharp-sword", "reinforced-shield"]))
       .toEqual({ damage: 4, defense: 3 });
     expect(applyGoldBonus(10, ["tax-amulet"])).toBe(12);
-    expect(purchaseItem({ gold: 12, heroHp: 18, heroMaxHp: 24, inventory: [] }, "healing-potion"))
+    expect(purchaseLegacyItem(legacy, "healing-potion"))
       .toMatchObject({ gold: 6, heroHp: 24, inventory: [] });
+  });
+
+  it.each([
+    ["gold", -1],
+    ["gold", 1.5],
+    ["gold", Number.MAX_SAFE_INTEGER + 1],
+    ["heroHp", -1],
+    ["heroHp", 1.5],
+    ["heroMaxHp", -1],
+    ["heroMaxHp", Number.POSITIVE_INFINITY],
+  ] as const)("rejects invalid legacy %s values", (field, value) => {
+    expect(() => purchaseLegacyItem({ ...legacy, [field]: value }, "healing-potion"))
+      .toThrow(`${field} must be a non-negative safe integer`);
+  });
+
+  it("rejects invalid legacy HP, item, funds, and inventory", () => {
+    expect(() => purchaseLegacyItem({ ...legacy, heroHp: 25 }, "healing-potion"))
+      .toThrow("heroHp cannot exceed heroMaxHp");
+    expect(() => purchaseLegacyItem(legacy, "missing-item")).toThrow("invalid item id");
+    expect(() => purchaseLegacyItem({ ...legacy, gold: 5 }, "healing-potion")).toThrow("not enough gold");
+    expect(() => purchaseLegacyItem({ ...legacy, inventory: ["missing-item"] }, "healing-potion"))
+      .toThrow("invalid inventory item id");
+  });
+
+  it("retains combat validation and duplicate nonstacking", () => {
+    expect(applyCombatBonuses({ damage: 3, defense: 2 }, ["sharp-sword", "sharp-sword"]))
+      .toEqual({ damage: 4, defense: 2 });
+    expect(() => applyCombatBonuses({ damage: -1, defense: 2 }, [])).toThrow("damage must be a non-negative safe integer");
+    expect(() => applyCombatBonuses({ damage: 1, defense: 2 }, ["unknown"])).toThrow("invalid inventory item id");
+  });
+
+  it("retains tax rounding, safe large values, duplicate nonstacking, and validation", () => {
+    expect(applyGoldBonus(9, ["tax-amulet"])).toBe(10);
+    expect(applyGoldBonus(4_054_199_049_377_828, ["tax-amulet"])).toBe(4_865_038_859_253_393);
+    expect(applyGoldBonus(10, ["tax-amulet", "tax-amulet"])).toBe(12);
+    expect(() => applyGoldBonus(1.5, [])).toThrow("baseGold must be a non-negative safe integer");
+    expect(() => applyGoldBonus(1, ["unknown"])).toThrow("invalid inventory item id");
   });
 });

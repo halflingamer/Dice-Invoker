@@ -8,6 +8,15 @@ export const RUN_ITEMS = Object.freeze({
     price: 8,
     kind: "passive",
     slot: "weapon",
+    effect: Object.freeze({ attack: 1 }),
+  }),
+  "dented-spear": Object.freeze({
+    id: "dented-spear",
+    name: "Lança Amassada",
+    price: 7,
+    kind: "passive",
+    slot: "weapon",
+    effect: Object.freeze({ attack: 1 }),
   }),
   "reinforced-shield": Object.freeze({
     id: "reinforced-shield",
@@ -15,6 +24,7 @@ export const RUN_ITEMS = Object.freeze({
     price: 8,
     kind: "passive",
     slot: "armor",
+    effect: Object.freeze({ defense: 1 }),
   }),
   "healing-potion": Object.freeze({
     id: "healing-potion",
@@ -22,6 +32,7 @@ export const RUN_ITEMS = Object.freeze({
     price: 6,
     kind: "consumable",
     slot: "consumable",
+    effect: Object.freeze({ heal: 6 }),
   }),
   "tax-amulet": Object.freeze({
     id: "tax-amulet",
@@ -29,6 +40,7 @@ export const RUN_ITEMS = Object.freeze({
     price: 12,
     kind: "passive",
     slot: "accessory",
+    effect: Object.freeze({ goldPercent: 20 }),
   }),
 } as const);
 
@@ -76,6 +88,13 @@ function isRunItemId(id: string): id is RunItemId {
 
 function isEquipmentSlot(slot: string): slot is EquipmentSlot {
   return slot === "weapon" || slot === "armor" || slot === "accessory";
+}
+
+type ItemEffectKey = "attack" | "defense" | "heal" | "goldPercent";
+
+function effectValue(itemId: RunItemId, key: ItemEffectKey): number {
+  const effect: Partial<Record<ItemEffectKey, number>> = RUN_ITEMS[itemId].effect;
+  return effect[key] ?? 0;
 }
 
 function validateInventory(inventory: readonly string[]): asserts inventory is readonly RunItemId[] {
@@ -138,48 +157,40 @@ function validateInventoryState(state: InventoryState): void {
   }
 }
 
-function isCanonicalPurchaseState(
-  state: PurchaseInventoryState | PurchaseState,
-): state is PurchaseInventoryState {
-  // Either canonical-only field commits the input to strict canonical validation.
-  return Object.hasOwn(state, "consumables") || Object.hasOwn(state, "equipment");
+export function purchaseItem(state: PurchaseInventoryState, itemId: string): PurchaseInventoryState {
+  assertNonNegativeSafeInteger(state.gold, "gold");
+  validateInventoryState(state);
+  if (!isRunItemId(itemId)) throw new Error("invalid item id");
+  const item = RUN_ITEMS[itemId];
+  if (state.gold < item.price) throw new Error("not enough gold");
+  if (item.kind !== "consumable" && state.inventory.includes(itemId)) {
+    throw new Error("nonconsumable already owned");
+  }
+  return item.kind === "consumable"
+    ? {
+        ...state,
+        gold: state.gold - item.price,
+        consumables: { ...state.consumables, [itemId]: (state.consumables[itemId] ?? 0) + 1 },
+      }
+    : { ...state, gold: state.gold - item.price, inventory: [...state.inventory, itemId] };
 }
 
-export function purchaseItem(state: PurchaseInventoryState, itemId: string): PurchaseInventoryState;
-/** @deprecated Temporary overload; canonical purchases store potions instead of healing. */
-export function purchaseItem(state: PurchaseState, itemId: string): PurchasedState;
-export function purchaseItem(
-  state: PurchaseInventoryState | PurchaseState,
-  itemId: string,
-): PurchaseInventoryState | PurchasedState {
+/** @deprecated Temporary compatibility function for run/UI callers awaiting migration. */
+export function purchaseLegacyItem(state: PurchaseState, itemId: string): PurchasedState {
   assertNonNegativeSafeInteger(state.gold, "gold");
   validateInventory(state.inventory);
   if (!isRunItemId(itemId)) throw new Error("invalid item id");
-
   const item = RUN_ITEMS[itemId];
   if (state.gold < item.price) throw new Error("not enough gold");
-
-  if (isCanonicalPurchaseState(state)) {
-    validateInventoryState(state);
-    if (item.kind !== "consumable" && state.inventory.includes(itemId)) {
-      throw new Error("nonconsumable already owned");
-    }
-    return item.kind === "consumable"
-      ? {
-          ...state,
-          gold: state.gold - item.price,
-          consumables: { ...state.consumables, [itemId]: (state.consumables[itemId] ?? 0) + 1 },
-        }
-      : { ...state, gold: state.gold - item.price, inventory: [...state.inventory, itemId] };
-  }
-
   assertNonNegativeSafeInteger(state.heroHp, "heroHp");
   assertNonNegativeSafeInteger(state.heroMaxHp, "heroMaxHp");
   if (state.heroHp > state.heroMaxHp) throw new Error("heroHp cannot exceed heroMaxHp");
   if (item.kind === "passive" && state.inventory.includes(itemId)) throw new Error("passive already owned");
   return {
     gold: state.gold - item.price,
-    heroHp: item.kind === "consumable" ? Math.min(state.heroHp + 6, state.heroMaxHp) : state.heroHp,
+    heroHp: item.kind === "consumable"
+      ? Math.min(state.heroHp + item.effect.heal, state.heroMaxHp)
+      : state.heroHp,
     heroMaxHp: state.heroMaxHp,
     inventory: item.kind === "passive" ? [...state.inventory, itemId] : [...state.inventory],
   };
@@ -263,7 +274,7 @@ export function consumeItem(
   else consumables[itemId] = count - 1;
   return {
     inventoryState: { ...state, consumables },
-    guardianHp: Math.min(guardian.hp + 6, guardian.maxHp),
+    guardianHp: Math.min(guardian.hp + RUN_ITEMS[itemId].effect.heal, guardian.maxHp),
   };
 }
 
@@ -284,11 +295,11 @@ export function applyEquipmentBonuses(
   validateOwnedInventory(ownedInventory);
   validateEquippedSlots(equippedSlots, ownedInventory);
   return {
-    attack: stats.attack + (equippedSlots.weapon === "sharp-sword" ? 1 : 0),
-    defense: stats.defense + (equippedSlots.armor === "reinforced-shield" ? 1 : 0),
-    gold: equippedSlots.accessory === "tax-amulet"
-      ? stats.gold + Math.floor(stats.gold / 5)
-      : stats.gold,
+    attack: stats.attack + (equippedSlots.weapon === null ? 0 : effectValue(equippedSlots.weapon, "attack")),
+    defense: stats.defense + (equippedSlots.armor === null ? 0 : effectValue(equippedSlots.armor, "defense")),
+    gold: equippedSlots.accessory === null
+      ? stats.gold
+      : stats.gold + Math.floor(stats.gold * effectValue(equippedSlots.accessory, "goldPercent") / 100),
   };
 }
 

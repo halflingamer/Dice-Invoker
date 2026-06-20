@@ -3,7 +3,7 @@ import { seasonOne } from "@/modules/content/season-1";
 import { rollClassCombatDice, rollClassCombatDie, resolveCombatExchange } from "@/modules/game-engine/combat";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { createEventOffer, resolveEventChoice } from "@/modules/game-engine/events";
-import { RUN_ITEMS, applyCombatBonuses, applyGoldBonus, purchaseItem, type RunItemId } from "@/modules/game-engine/economy";
+import { RUN_ITEMS, applyCombatBonuses, applyGoldBonus, purchaseLegacyItem, type RunItemId } from "@/modules/game-engine/economy";
 import { chooseMerchantItem, chooseReward, chooseTreasureReward, createMerchantOffer, createTreasureOffer } from "@/modules/game-engine/rewards";
 import { applyPromotion, awardExperience, getPromotionChoices } from "@/modules/game-engine/progression";
 import { runCommandSchema, type RunCommand } from "./command-schema";
@@ -315,7 +315,7 @@ export function applyCommand(
       let option;
       try { option = chooseMerchantItem(state.pendingRoom.offer, command.offerId); }
       catch { throw new Error("merchant offer is not active"); }
-      const purchased = purchaseItem(state, option.itemId);
+      const purchased = purchaseLegacyItem(state, option.itemId);
       return {
         ...state, ...purchased, ...rememberRoomCommand(state, command.commandId),
         purchasedMerchantOfferIds: [...state.purchasedMerchantOfferIds, command.offerId],
