@@ -56,14 +56,49 @@ describe("createTreasureOffer", () => {
     }
   });
 
-  it("is deterministic and consumes only the reward stream", () => {
-    const expectedMap = createNamedRollStream("shared-seed", "map", 4);
-    const first = createTreasureOffer("shared-seed", 4, itemIds);
-    const second = createTreasureOffer("shared-seed", 4, itemIds);
-    const actualMap = createNamedRollStream("shared-seed", "map", 4);
+  it("derives merchant and treasure offers exclusively from the reward stream", () => {
+    const seed = "shared-seed";
+    const initialCursor = 4;
+    const expectedMerchantStream = createNamedRollStream(seed, "reward", initialCursor);
+    const remainingItems = [...itemIds];
+    const expectedMerchantOptions = Array.from({ length: 3 }, (_, index) => {
+      const selectedIndex = expectedMerchantStream.roll(remainingItems.length) - 1;
+      const [itemId] = remainingItems.splice(selectedIndex, 1);
+      return {
+        offerId: `merchant-${initialCursor}-${index + 1}-${expectedMerchantStream.roll(100)}`,
+        itemId,
+      };
+    });
+    const expectedMerchantCursor = expectedMerchantStream.cursor();
 
-    expect(first).toEqual(second);
-    expect(actualMap.roll(100)).toBe(expectedMap.roll(100));
+    const merchant = createMerchantOffer(seed, initialCursor, itemIds);
+    expect(merchant).toEqual({
+      options: expectedMerchantOptions,
+      rngCursor: expectedMerchantCursor,
+    });
+
+    const expectedTreasureStream = createNamedRollStream(seed, "reward", expectedMerchantCursor);
+    const expectedGold = expectedTreasureStream.roll(7) + 5;
+    const expectedItem = itemIds[expectedTreasureStream.roll(itemIds.length) - 1];
+    const expectedTreasureOptions = [
+      {
+        offerId: `treasure-${expectedMerchantCursor}-1-${expectedTreasureStream.roll(100)}`,
+        payload: { kind: "gold", amount: expectedGold },
+      },
+      {
+        offerId: `treasure-${expectedMerchantCursor}-2-${expectedTreasureStream.roll(100)}`,
+        payload: { kind: "item", itemId: expectedItem },
+      },
+      {
+        offerId: `treasure-${expectedMerchantCursor}-3-${expectedTreasureStream.roll(100)}`,
+        payload: { kind: "essence", amount: 1 },
+      },
+    ];
+
+    expect(createTreasureOffer(seed, merchant.rngCursor, itemIds)).toEqual({
+      options: expectedTreasureOptions,
+      rngCursor: expectedTreasureStream.cursor(),
+    });
   });
 
   it("rejects empty candidates and invalid item ids", () => {
