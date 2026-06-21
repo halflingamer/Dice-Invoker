@@ -78,7 +78,7 @@ function assertNever(value: never): never {
   throw new Error(`unsupported command: ${JSON.stringify(value)}`);
 }
 
-export function applyCommand(
+function applyLegacyCommand(
   state: RunState,
   input: unknown,
   context: CommandContext = { now: () => Date.now() },
@@ -433,6 +433,38 @@ export function applyCommand(
       };
     }
     default:
-      return assertNever(command);
+      return assertNever(command as never);
   }
+}
+
+const canonicalInvaderId = (legacyId: string): string => legacyId === "receipt-slime" ? "torch-bearer" : legacyId;
+const legacyInvaderId = (canonicalId: string): string => canonicalId === "torch-bearer" ? "receipt-slime" : canonicalId;
+
+function projectCanonicalState(state: RunState): RunState {
+  const enemyId = state.invaderId === null ? state.enemyId : legacyInvaderId(state.invaderId);
+  const enemyHp = state.invaderId === null ? 0 : state.invaderHp;
+  if (state.heroHp === state.guardianHp && state.heroMaxHp === state.guardianMaxHp && state.enemyId === enemyId && state.enemyHp === enemyHp) return state;
+  return { ...state, heroHp: state.guardianHp, heroMaxHp: state.guardianMaxHp, enemyId, enemyHp };
+}
+
+export function applyCommand(
+  state: RunState,
+  input: unknown,
+  context: CommandContext = { now: () => Date.now() },
+): RunState {
+  const projected = projectCanonicalState(state);
+  const next = applyLegacyCommand(projected, input, context);
+  if (next === projected && projected === state) return state;
+  const invaderId = next.enemyHp <= 0 && next.phase === "complete" ? next.invaderId : canonicalInvaderId(next.enemyId);
+  const guardianHp = next.heroHp;
+  const outcome = guardianHp === 0 ? "defeat" : next.phase === "complete" ? "victory" : "ongoing";
+  return {
+    ...next,
+    guardianHp,
+    guardianMaxHp: next.heroMaxHp,
+    invaderId,
+    invaderHp: next.enemyHp,
+    outcome,
+    completedRoomCount: next.visitedRoomIds.length,
+  };
 }

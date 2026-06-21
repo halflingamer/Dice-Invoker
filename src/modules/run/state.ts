@@ -1,5 +1,5 @@
 import type { EventAuditRecord, EventChoiceResult, EventOffer } from "@/modules/game-engine/events";
-import type { RunItemId } from "@/modules/game-engine/economy";
+import type { ConsumableStacks, EquipmentByGuardian, RunItemId } from "@/modules/game-engine/economy";
 import type { RunMap } from "@/modules/game-engine/map";
 import type { RandomChannel } from "@/modules/game-engine/rng";
 import type { MerchantOffer, RewardOffer, TreasureOffer } from "@/modules/game-engine/rewards";
@@ -17,6 +17,8 @@ export type RunPhase =
   | "reward"
   | "event"
   | "complete";
+
+export type RunOutcome = "ongoing" | "victory" | "defeat";
 
 export type DieRoll = Readonly<{
   dieId: string;
@@ -44,6 +46,18 @@ export type RunState = Readonly<{
   map: RunMap;
   rngCursors: Readonly<Record<RandomChannel, number>>;
   phase: RunPhase;
+  campaignPhaseIndex: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  completedRoomCount: number;
+  outcome: RunOutcome;
+  guardianId: string;
+  unlockedGuardianIds: readonly string[];
+  guardianHp: number;
+  guardianMaxHp: number;
+  guardianNaturalDefense: number;
+  invaderId: string | null;
+  invaderHp: number;
+  invaderMaxHp: number;
+  invaderNaturalDefense: number;
   heroId: string;
   heroHp: number;
   heroMaxHp: number;
@@ -55,6 +69,8 @@ export type RunState = Readonly<{
   maxEssence: number;
   gold: number;
   inventory: readonly RunItemId[];
+  consumables: ConsumableStacks;
+  equipment: EquipmentByGuardian;
   pendingRoom: PendingRoom;
   handledRoomCommandIds: readonly string[];
   purchasedMerchantOfferIds: readonly string[];

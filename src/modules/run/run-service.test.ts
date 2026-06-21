@@ -46,6 +46,46 @@ function serviceHarness(state: RunState, version = 4) {
 }
 
 describe("run service interactive commands", () => {
+  it.each([
+    ["phase", { campaignPhaseIndex: 0 }],
+    ["outcome", { outcome: "victory", phase: "map-reveal" }],
+    ["slots", { equipment: { "caretaker-slime": { weapon: null, armor: null, accessory: null, ring: null } } }],
+    ["item", { inventory: ["forged-item"] }],
+    ["equipment ownership", { equipment: { "caretaker-slime": { weapon: "sharp-sword", armor: null, accessory: null } } }],
+    ["equipment type", { inventory: ["sharp-sword"], equipment: { "caretaker-slime": { weapon: null, armor: "sharp-sword", accessory: null } } }],
+    ["consumable count", { consumables: { "healing-potion": Number.MAX_SAFE_INTEGER + 1 } }],
+  ])("rejects invalid persisted canonical %s", async (_label, mutation) => {
+    const base = createRun({ seed: "invalid-canonical-secret", guardianId: "caretaker-slime" });
+    const { service } = serviceHarness({ ...base, ...mutation } as unknown as RunState);
+    const execution = service.execute("user-1", "run-1", "invalid-canonical-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    });
+    await expect(execution).rejects.toThrow("stored run state is invalid");
+    await expect(execution).rejects.not.toThrow(/invalid-canonical-secret/);
+  });
+
+  it("rejects forged partial canonical state instead of applying legacy defaults", async () => {
+    const base = createRun({ seed: "partial-canonical-secret", guardianId: "caretaker-slime" });
+    const legacy = persisted(base) as Record<string, unknown>;
+    for (const key of ["campaignPhaseIndex", "completedRoomCount", "outcome", "unlockedGuardianIds", "guardianHp", "guardianMaxHp", "guardianNaturalDefense", "invaderId", "invaderHp", "invaderMaxHp", "invaderNaturalDefense", "consumables", "equipment"]) delete legacy[key];
+    const { service } = serviceHarness({ ...legacy, seed: base.seed, guardianId: "caretaker-slime" } as unknown as RunState);
+    await expect(service.execute("user-1", "run-1", "partial-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    })).rejects.toThrow("stored run state is invalid");
+  });
+
+  it("safely migrates an unambiguous legacy starter state", async () => {
+    const base = createRun({ seed: "safe-legacy-seed", guardianId: "caretaker-slime" });
+    const legacy = persisted(base) as Record<string, unknown>;
+    for (const key of ["campaignPhaseIndex", "completedRoomCount", "outcome", "guardianId", "unlockedGuardianIds", "guardianHp", "guardianMaxHp", "guardianNaturalDefense", "invaderId", "invaderHp", "invaderMaxHp", "invaderNaturalDefense", "consumables", "equipment"]) delete legacy[key];
+    legacy.heroHp = 24;
+    legacy.heroMaxHp = 24;
+    const { service } = serviceHarness({ ...legacy, seed: base.seed } as unknown as RunState);
+    const response = await service.execute("user-1", "run-1", "legacy-migrate-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1,
+    });
+    expect(response.state).toMatchObject({ guardianId: "caretaker-slime", campaignPhaseIndex: 1, outcome: "ongoing" });
+  });
   it("persists the reducer-assigned sequence for commands without sequence", async () => {
     const base = createRun({ seed: "service-merchant", heroId: "squire" });
     const state = {

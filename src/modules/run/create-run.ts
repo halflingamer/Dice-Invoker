@@ -4,19 +4,24 @@ import { generateMap } from "@/modules/game-engine/map";
 import { createHeroProgression } from "@/modules/game-engine/progression";
 import type { RunState } from "./state";
 
-type CreateRunInput = Readonly<{ seed: string; heroId: string }>;
+type CreateRunInput = Readonly<{ seed: string; guardianId: string }>;
+type LegacyCreateRunInput = Readonly<{ seed: string; heroId: string }>;
 
-export function createRun(input: CreateRunInput): RunState {
+export function createRun(input: CreateRunInput | LegacyCreateRunInput): RunState {
   if (input.seed.length < 8) throw new Error("seed must contain at least 8 characters");
 
   const season = loadSeason(seasonOne);
-  const hero = season.heroes.find((candidate) => candidate.id === input.heroId);
-  if (!hero) throw new Error("unknown hero");
-  if (hero.unlock.kind !== "starter") throw new Error("hero is not unlocked");
+  const guardianId = "guardianId" in input ? input.guardianId : input.heroId === "squire" ? "caretaker-slime" : input.heroId;
+  const guardian = seasonOne.guardians.find((candidate) => candidate.id === guardianId);
+  if (!guardian) throw new Error("unknown guardian");
+  if (guardian.unlock.kind !== "starter") throw new Error("guardian is not unlocked");
+  const hero = season.heroes.find((candidate) => candidate.id === "squire")!;
 
   const enemy = season.enemies.find((candidate) => candidate.id === "receipt-slime");
   if (!enemy) throw new Error("starter enemy is missing");
-  const map = generateMap(input.seed);
+  const invader = seasonOne.invaders.find((candidate) => candidate.id === "torch-bearer")!;
+  const campaignPhase = seasonOne.phases[0]!;
+  const map = generateMap({ seed: input.seed, phaseIndex: campaignPhase.index, roomCount: campaignPhase.roomCount });
   const progression = createHeroProgression(hero.id, season);
 
   return {
@@ -31,9 +36,21 @@ export function createRun(input: CreateRunInput): RunState {
       event: 0,
     },
     phase: "map-reveal",
+    campaignPhaseIndex: 1,
+    completedRoomCount: 0,
+    outcome: "ongoing",
+    guardianId: guardian.id,
+    unlockedGuardianIds: [guardian.id],
+    guardianHp: guardian.maxHp,
+    guardianMaxHp: guardian.maxHp,
+    guardianNaturalDefense: guardian.naturalDefense,
+    invaderId: invader.id,
+    invaderHp: invader.maxHp,
+    invaderMaxHp: invader.maxHp,
+    invaderNaturalDefense: invader.naturalDefense,
     heroId: hero.id,
-    heroHp: hero.maxHp,
-    heroMaxHp: hero.maxHp,
+    heroHp: guardian.maxHp,
+    heroMaxHp: guardian.maxHp,
     enemyId: enemy.id,
     enemyHp: enemy.maxHp,
     combatRound: 0,
@@ -42,6 +59,8 @@ export function createRun(input: CreateRunInput): RunState {
     maxEssence: 2,
     gold: 12,
     inventory: [],
+    consumables: {},
+    equipment: { [guardian.id]: { weapon: null, armor: null, accessory: null } },
     pendingRoom: null,
     handledRoomCommandIds: [],
     purchasedMerchantOfferIds: [],

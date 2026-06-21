@@ -40,14 +40,14 @@ describe("run reducer", () => {
     const run = createRun({ seed: "server-seed", heroId: "squire" });
 
     expect(run.phase).toBe("map-reveal");
-    expect(run.map.layers).toHaveLength(10);
+    expect(run.map.layers).toHaveLength(4);
     expect(run.availableRoomIds).toEqual(run.map.layers[0]!.nodes.map((node) => node.id));
     expect(run.currentRoomId).toBeNull();
     expect(run.visitedRoomIds).toEqual([]);
     expect(run.currentLayer).toBe(0);
     expect(run.currentClassStageId).toBe("squire-d4");
     expect(run.xp).toBe(0);
-    expect(run).toMatchObject({ heroHp: 24, heroMaxHp: 24, gold: 12, essence: 2 });
+    expect(run).toMatchObject({ heroHp: 28, heroMaxHp: 28, guardianHp: 28, guardianMaxHp: 28, gold: 12, essence: 2 });
     expect(run.inventory).toEqual([]);
     expect(run.pendingRoom).toBeNull();
     expect(run.rngCursors).toEqual({
@@ -86,7 +86,7 @@ describe("run reducer", () => {
     expect(entered.visitedRoomIds).toEqual([firstRoomId]);
 
     const officialNextIds = run.map.layers[0]!.nodes[0]!.nextNodeIds;
-    const choosingNext = { ...entered, phase: "room-choice" as const, availableRoomIds: officialNextIds };
+    const choosingNext = { ...entered, phase: "room-choice" as const, pendingRoom: null, availableRoomIds: officialNextIds };
     expect(() => applyCommand(choosingNext, { type: "CHOOSE_ROOM", sequence: 3, roomId: firstRoomId })).toThrow(/available|reachable|visited/i);
     const skippedRoomId = run.map.layers[2]!.nodes[0]!.id;
     expect(() => applyCommand(choosingNext, { type: "CHOOSE_ROOM", sequence: 3, roomId: skippedRoomId })).toThrow(/available|reachable/i);
@@ -167,7 +167,7 @@ describe("run reducer", () => {
   });
 
   it("awards experience only after a combat victory", () => {
-    const run = { ...readyToRollRun(), enemyHp: 1 };
+    const run = { ...readyToRollRun(), enemyHp: 1, invaderHp: 1 };
     const rolling = applyCommand(run, { type: "BEGIN_COMBAT_TURN", sequence: 1 }, at(1_000));
     const resolved = applyCommand(rolling, { type: "RESOLVE_COMBAT_TURN", sequence: 2 }, at(3_500));
 
@@ -201,7 +201,10 @@ describe("run reducer", () => {
     const run = {
       ...readyToRollRun(),
       heroHp: 20,
+      guardianHp: 20,
       enemyHp: 20,
+      invaderHp: 20,
+      invaderMaxHp: 20,
       inventory: ["sharp-sword", "reinforced-shield"] as const,
       phase: "combat-intervention" as const,
       combatTurn: {
@@ -232,7 +235,9 @@ describe("run reducer", () => {
         })),
       },
       heroHp: 7,
+      guardianHp: 7,
       enemyHp: 3,
+      invaderHp: 3,
       gold: 0,
       inventory: ["tax-amulet"] as const,
       phase: "combat-intervention" as const,
@@ -257,7 +262,10 @@ describe("run reducer", () => {
     const run = {
       ...readyToRollRun(),
       heroHp: 2,
+      guardianHp: 2,
       enemyHp: 20,
+      invaderHp: 20,
+      invaderMaxHp: 20,
       phase: "combat-intervention" as const,
       combatTurn: {
         turn: 1,
@@ -458,7 +466,7 @@ describe("run reducer", () => {
       type: "CHOOSE_TREASURE", offerId: option.offerId, commandId: "take-potion",
     });
 
-    expect(chosen.heroHp).toBe(24);
+    expect(chosen.heroHp).toBe(28);
     expect(chosen.gold).toBe(run.gold);
     expect(chosen.inventory).not.toContain("healing-potion");
   });

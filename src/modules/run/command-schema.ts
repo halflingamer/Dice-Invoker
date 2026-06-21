@@ -10,7 +10,7 @@ export const runCommandSchema = z.union([
   z.object({
     type: z.literal("REROLL_COMBAT_DIE"),
     sequence,
-    dieKind: z.enum(["damage", "defense"]),
+    dieKind: z.literal("damage"),
   }).strict(),
   z.object({ type: z.literal("RESOLVE_COMBAT_TURN"), sequence }).strict(),
   z.object({ type: z.literal("ROLL_DICE"), sequence }).strict(),
@@ -35,6 +35,10 @@ export const runCommandSchema = z.union([
   z.object({ type: z.literal("CHOOSE_EVENT_OPTION"), offerId: id, commandId: id }).strict(),
   z.object({ type: z.literal("ACKNOWLEDGE_EVENT_RESULT"), commandId: id }).strict(),
   z.object({ type: z.literal("CHOOSE_PROMOTION"), sequence, classStageId: id }).strict(),
+  z.object({ type: z.literal("EQUIP_ITEM"), sequence, commandId: id, guardianId: id, itemId: id }).strict(),
+  z.object({ type: z.literal("UNEQUIP_ITEM"), sequence, commandId: id, guardianId: id, slot: z.enum(["weapon", "armor", "accessory"]) }).strict(),
+  z.object({ type: z.literal("USE_CONSUMABLE"), sequence, commandId: id, guardianId: id, itemId: id }).strict(),
+  z.object({ type: z.literal("START_NEW_RUN"), sequence, commandId: id }).strict(),
 ]);
 
 export type RunCommand = z.infer<typeof runCommandSchema>;

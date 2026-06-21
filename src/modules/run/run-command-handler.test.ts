@@ -33,6 +33,31 @@ it.each([
   expect(execute).not.toHaveBeenCalled();
 });
 
+it.each([
+  { type: "EQUIP_ITEM", sequence: 1, commandId: "equip-1", guardianId: "caretaker-slime", itemId: "sharp-sword", slot: "weapon" },
+  { type: "EQUIP_ITEM", sequence: 1, commandId: "equip-2", guardianId: "caretaker-slime", itemId: "sharp-sword", attack: 999 },
+  { type: "UNEQUIP_ITEM", sequence: 1, commandId: "unequip-1", guardianId: "caretaker-slime", slot: "weapon", defense: 999 },
+  { type: "USE_CONSUMABLE", sequence: 1, commandId: "use-1", guardianId: "caretaker-slime", itemId: "healing-potion", critical: true },
+  { type: "REROLL_COMBAT_DIE", sequence: 1, dieKind: "defense" },
+])("rejects forged inventory command fields", async (body) => {
+  const execute = vi.fn();
+  const handler = createRunCommandHandler({ authenticate: async () => ({ userId: "user-1" }), execute, consumeRateLimit: () => true });
+  expect((await handler(request(body), "run-1")).status).toBe(400);
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it.each([
+  { type: "EQUIP_ITEM", sequence: 1, commandId: "equip-ok", guardianId: "caretaker-slime", itemId: "sharp-sword" },
+  { type: "UNEQUIP_ITEM", sequence: 1, commandId: "unequip-ok", guardianId: "caretaker-slime", slot: "armor" },
+  { type: "USE_CONSUMABLE", sequence: 1, commandId: "use-ok", guardianId: "caretaker-slime", itemId: "healing-potion" },
+  { type: "START_NEW_RUN", sequence: 1, commandId: "new-run-ok" },
+])("accepts strict canonical command $type", async (body) => {
+  const execute = vi.fn().mockResolvedValue({});
+  const handler = createRunCommandHandler({ authenticate: async () => ({ userId: "user-1" }), execute, consumeRateLimit: () => true });
+  expect((await handler(request(body), "run-1")).status).toBe(200);
+  expect(execute).toHaveBeenCalledWith("user-1", "run-1", idempotencyKey, body);
+});
+
 it("does not leak the run seed or private offer details through errors", async () => {
   const handler = createRunCommandHandler({
     authenticate: async () => ({ userId: "user-1" }),
