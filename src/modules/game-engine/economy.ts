@@ -97,6 +97,16 @@ function effectValue(itemId: RunItemId, key: ItemEffectKey): number {
   return effect[key] ?? 0;
 }
 
+function percentageBonus(value: number, percentage: number): number {
+  assertNonNegativeSafeInteger(percentage, "gold percentage");
+  if (percentage === 0) return 0;
+  const divisor = 100 / percentage;
+  if (!Number.isSafeInteger(divisor)) {
+    throw new Error("gold percentage must divide 100 evenly");
+  }
+  return Math.floor(value / divisor);
+}
+
 function validateInventory(inventory: readonly string[]): asserts inventory is readonly RunItemId[] {
   if (!Array.isArray(inventory) || !inventory.every(isRunItemId)) {
     throw new Error("invalid inventory item id");
@@ -166,11 +176,17 @@ export function purchaseItem(state: PurchaseInventoryState, itemId: string): Pur
   if (item.kind !== "consumable" && state.inventory.includes(itemId)) {
     throw new Error("nonconsumable already owned");
   }
+  const nextConsumableCount = item.kind === "consumable"
+    ? (state.consumables[itemId] ?? 0) + 1
+    : 0;
+  if (item.kind === "consumable" && !Number.isSafeInteger(nextConsumableCount)) {
+    throw new Error("consumable count must be a safe integer after purchase");
+  }
   return item.kind === "consumable"
     ? {
         ...state,
         gold: state.gold - item.price,
-        consumables: { ...state.consumables, [itemId]: (state.consumables[itemId] ?? 0) + 1 },
+        consumables: { ...state.consumables, [itemId]: nextConsumableCount },
       }
     : { ...state, gold: state.gold - item.price, inventory: [...state.inventory, itemId] };
 }
@@ -294,13 +310,16 @@ export function applyEquipmentBonuses(
   assertNonNegativeSafeInteger(stats.gold, "gold");
   validateOwnedInventory(ownedInventory);
   validateEquippedSlots(equippedSlots, ownedInventory);
-  return {
-    attack: stats.attack + (equippedSlots.weapon === null ? 0 : effectValue(equippedSlots.weapon, "attack")),
-    defense: stats.defense + (equippedSlots.armor === null ? 0 : effectValue(equippedSlots.armor, "defense")),
-    gold: equippedSlots.accessory === null
-      ? stats.gold
-      : stats.gold + Math.floor(stats.gold * effectValue(equippedSlots.accessory, "goldPercent") / 100),
-  };
+  const attack = stats.attack + (equippedSlots.weapon === null ? 0 : effectValue(equippedSlots.weapon, "attack"));
+  const defense = stats.defense + (equippedSlots.armor === null ? 0 : effectValue(equippedSlots.armor, "defense"));
+  const goldPercent = equippedSlots.accessory === null
+    ? 0
+    : effectValue(equippedSlots.accessory, "goldPercent");
+  const gold = stats.gold + percentageBonus(stats.gold, goldPercent);
+  assertNonNegativeSafeInteger(attack, "attack");
+  assertNonNegativeSafeInteger(defense, "defense");
+  assertNonNegativeSafeInteger(gold, "gold");
+  return { attack, defense, gold };
 }
 
 export interface CombatStats {
@@ -313,15 +332,20 @@ export function applyCombatBonuses(stats: CombatStats, inventory: readonly strin
   assertNonNegativeSafeInteger(stats.damage, "damage");
   assertNonNegativeSafeInteger(stats.defense, "defense");
   validateInventory(inventory);
-  return {
-    damage: stats.damage + (inventory.includes("sharp-sword") ? 1 : 0),
-    defense: stats.defense + (inventory.includes("reinforced-shield") ? 1 : 0),
-  };
+  const damage = stats.damage + (inventory.includes("sharp-sword") ? 1 : 0);
+  const defense = stats.defense + (inventory.includes("reinforced-shield") ? 1 : 0);
+  assertNonNegativeSafeInteger(damage, "damage");
+  assertNonNegativeSafeInteger(defense, "defense");
+  return { damage, defense };
 }
 
 /** @deprecated Compatibility wrapper retaining owned-is-active behavior until consumers migrate. */
 export function applyGoldBonus(baseGold: number, inventory: readonly string[]): number {
   assertNonNegativeSafeInteger(baseGold, "baseGold");
   validateInventory(inventory);
-  return inventory.includes("tax-amulet") ? baseGold + Math.floor(baseGold / 5) : baseGold;
+  const gold = inventory.includes("tax-amulet")
+    ? baseGold + percentageBonus(baseGold, effectValue("tax-amulet", "goldPercent"))
+    : baseGold;
+  assertNonNegativeSafeInteger(gold, "gold");
+  return gold;
 }

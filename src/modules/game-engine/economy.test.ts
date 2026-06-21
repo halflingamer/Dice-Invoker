@@ -63,6 +63,13 @@ describe("canonical purchaseItem", () => {
       .toThrow("nonconsumable already owned");
   });
 
+  it("rejects a potion purchase that would overflow its safe stack count", () => {
+    expect(() => purchaseItem({
+      gold: 6,
+      ...inventoryState({ consumables: { "healing-potion": Number.MAX_SAFE_INTEGER } }),
+    }, "healing-potion")).toThrow("consumable count must be a safe integer after purchase");
+  });
+
   it("rejects an unknown item and insufficient gold", () => {
     expect(() => purchaseItem({ gold: 12, ...inventoryState() }, "missing-item")).toThrow("invalid item id");
     expect(() => purchaseItem({ gold: 7, ...inventoryState() }, "sharp-sword")).toThrow("not enough gold");
@@ -172,6 +179,17 @@ describe("applyEquipmentBonuses", () => {
     expect(() => applyEquipmentBonuses({ attack: 1, defense: 1, gold: 1 }, ["missing"] as never, emptySlots()))
       .toThrow("invalid inventory item id");
   });
+
+  it.each([
+    [{ attack: Number.MAX_SAFE_INTEGER, defense: 1, gold: 1 }, { weapon: "sharp-sword", armor: null, accessory: null }, "attack"],
+    [{ attack: 1, defense: Number.MAX_SAFE_INTEGER, gold: 1 }, { weapon: null, armor: "reinforced-shield", accessory: null }, "defense"],
+    [{ attack: 1, defense: 1, gold: Number.MAX_SAFE_INTEGER }, { weapon: null, armor: null, accessory: "tax-amulet" }, "gold"],
+  ] as const)("rejects unsafe derived %s equipment bonuses", (stats, slots, field) => {
+    const inventory = Object.values(slots).filter((id): id is NonNullable<typeof id> => id !== null);
+    expect(() => applyEquipmentBonuses(stats, inventory, slots)).toThrow(
+      `${field} must be a non-negative safe integer`,
+    );
+  });
 });
 
 describe("legacy compatibility wrappers", () => {
@@ -212,6 +230,10 @@ describe("legacy compatibility wrappers", () => {
       .toEqual({ damage: 4, defense: 2 });
     expect(() => applyCombatBonuses({ damage: -1, defense: 2 }, [])).toThrow("damage must be a non-negative safe integer");
     expect(() => applyCombatBonuses({ damage: 1, defense: 2 }, ["unknown"])).toThrow("invalid inventory item id");
+    expect(() => applyCombatBonuses({ damage: Number.MAX_SAFE_INTEGER, defense: 2 }, ["sharp-sword"]))
+      .toThrow("damage must be a non-negative safe integer");
+    expect(() => applyCombatBonuses({ damage: 1, defense: Number.MAX_SAFE_INTEGER }, ["reinforced-shield"]))
+      .toThrow("defense must be a non-negative safe integer");
   });
 
   it("retains tax rounding, safe large values, duplicate nonstacking, and validation", () => {
@@ -220,5 +242,7 @@ describe("legacy compatibility wrappers", () => {
     expect(applyGoldBonus(10, ["tax-amulet", "tax-amulet"])).toBe(12);
     expect(() => applyGoldBonus(1.5, [])).toThrow("baseGold must be a non-negative safe integer");
     expect(() => applyGoldBonus(1, ["unknown"])).toThrow("invalid inventory item id");
+    expect(() => applyGoldBonus(Number.MAX_SAFE_INTEGER, ["tax-amulet"]))
+      .toThrow("gold must be a non-negative safe integer");
   });
 });
