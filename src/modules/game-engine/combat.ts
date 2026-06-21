@@ -1,13 +1,24 @@
 import type { ClassStage } from "@/modules/content/schema";
 import type {
   ClassCombatDice,
+  AttackRoll,
+  CombatDieSides,
   CombatDieKind,
   CombatDieResult,
   CombatExchangeInput,
   CombatExchangeResult,
+  LegacyCombatExchangeInput,
+  LegacyCombatExchangeResult,
   TurnInput,
   TurnResult,
 } from "./types";
+
+export function createAttackRoll(sides: CombatDieSides, result: number): AttackRoll {
+  if (!Number.isSafeInteger(result) || result < 1 || result > sides) {
+    throw new Error(`attack roll result must be an integer from 1 to ${sides}`);
+  }
+  return { sides, result, critical: result === sides };
+}
 
 export function rollClassCombatDie(
   stage: ClassStage,
@@ -50,20 +61,33 @@ export function resolveCombatExchange(input: CombatExchangeInput): CombatExchang
     assertNonNegativeInteger(label, value);
   }
 
+  const damageDealt = Math.max(0, input.guardianAttack - input.invaderDefense);
+  const invaderHp = Math.max(0, input.invaderHp - damageDealt);
+  const victory = invaderHp === 0;
+  const damageTaken = victory ? 0 : Math.max(0, input.invaderAttack - input.guardianDefense);
+  const guardianHp = Math.max(0, input.guardianHp - damageTaken);
+
+  return {
+    guardianHp,
+    invaderHp,
+    damageDealt,
+    damageTaken,
+    victory,
+    defeat: guardianHp === 0,
+  };
+}
+
+/** @deprecated Compatibility for callers that still use the two-dice combat model. */
+export function resolveLegacyCombatExchange(input: LegacyCombatExchangeInput): LegacyCombatExchangeResult {
+  for (const [label, value] of Object.entries(input)) {
+    assertNonNegativeInteger(label, value);
+  }
   const damageDealt = input.heroDamage;
   const enemyHp = Math.max(0, input.enemyHp - damageDealt);
   const victory = enemyHp === 0;
   const damageTaken = victory ? 0 : Math.max(0, input.enemyAttack - input.heroDefense);
   const heroHp = Math.max(0, input.heroHp - damageTaken);
-
-  return {
-    heroHp,
-    enemyHp,
-    damageDealt,
-    damageTaken,
-    victory,
-    defeat: heroHp === 0,
-  };
+  return { heroHp, enemyHp, damageDealt, damageTaken, victory, defeat: heroHp === 0 };
 }
 
 export function resolveTurn(input: TurnInput): TurnResult {

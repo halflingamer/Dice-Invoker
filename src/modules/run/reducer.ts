@@ -1,6 +1,6 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
-import { rollClassCombatDice, rollClassCombatDie, resolveCombatExchange } from "@/modules/game-engine/combat";
+import { rollClassCombatDice, rollClassCombatDie, resolveLegacyCombatExchange } from "@/modules/game-engine/combat";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { createEventOffer, resolveEventChoice } from "@/modules/game-engine/events";
 import { RUN_ITEMS, applyCombatBonuses, applyGoldBonus, purchaseLegacyItem, type RunItemId } from "@/modules/game-engine/economy";
@@ -154,7 +154,7 @@ export function applyCommand(
         state.heroMaxHp,
         state.heroHp + state.combatTurn.damage.healing + state.combatTurn.defense.healing,
       );
-      const result = resolveCombatExchange({
+      const result = resolveLegacyCombatExchange({
         heroHp: healedHeroHp,
         enemyHp: state.enemyHp,
         heroDamage: stats.damage,

@@ -1,4 +1,11 @@
 export type CombatOutcome = "ongoing" | "victory" | "defeat";
+export type CombatDieSides = 4 | 6 | 8 | 10 | 12 | 20;
+
+export type AttackRoll = Readonly<{
+  sides: CombatDieSides;
+  result: number;
+  critical: boolean;
+}>;
 export type CombatDieKind = "damage" | "defense";
 
 export type CombatDieResult = Readonly<{
@@ -16,6 +23,25 @@ export type ClassCombatDice = Readonly<{
 }>;
 
 export type CombatExchangeInput = Readonly<{
+  guardianHp: number;
+  invaderHp: number;
+  guardianAttack: number;
+  guardianDefense: number;
+  invaderAttack: number;
+  invaderDefense: number;
+}>;
+
+export type CombatExchangeResult = Readonly<{
+  guardianHp: number;
+  invaderHp: number;
+  damageDealt: number;
+  damageTaken: number;
+  victory: boolean;
+  defeat: boolean;
+}>;
+
+/** @deprecated Use CombatExchangeInput. */
+export type LegacyCombatExchangeInput = Readonly<{
   heroHp: number;
   enemyHp: number;
   heroDamage: number;
@@ -23,7 +49,8 @@ export type CombatExchangeInput = Readonly<{
   enemyAttack: number;
 }>;
 
-export type CombatExchangeResult = Readonly<{
+/** @deprecated Use CombatExchangeResult. */
+export type LegacyCombatExchangeResult = Readonly<{
   heroHp: number;
   enemyHp: number;
   damageDealt: number;

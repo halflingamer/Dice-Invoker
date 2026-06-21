@@ -1,23 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { resolveCombatExchange, rollClassCombatDice, resolveTurn } from "./combat";
+import { createAttackRoll, resolveCombatExchange, rollClassCombatDice, resolveTurn } from "./combat";
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
 
 const season = loadSeason(seasonOne);
 
 describe("resolveCombatExchange", () => {
-  it("applies the enemy counter attack after the hero attack", () => {
+  it("subtracts fixed defense from each attack", () => {
     expect(
       resolveCombatExchange({
-        heroHp: 24,
-        enemyHp: 18,
-        heroDamage: 5,
-        heroDefense: 2,
-        enemyAttack: 6,
+        guardianHp: 24,
+        invaderHp: 18,
+        guardianAttack: 9,
+        guardianDefense: 2,
+        invaderAttack: 6,
+        invaderDefense: 4,
       }),
     ).toEqual({
-      heroHp: 20,
-      enemyHp: 13,
+      guardianHp: 20,
+      invaderHp: 13,
       damageDealt: 5,
       damageTaken: 4,
       victory: false,
@@ -25,40 +26,64 @@ describe("resolveCombatExchange", () => {
     });
   });
 
-  it("does not counter attack when the hero defeats the enemy", () => {
+  it("deals zero damage when defense meets or exceeds attack", () => {
     expect(
       resolveCombatExchange({
-        heroHp: 24,
-        enemyHp: 3,
-        heroDamage: 5,
-        heroDefense: 2,
-        enemyAttack: 6,
+        guardianHp: 10, invaderHp: 10, guardianAttack: 4, guardianDefense: 8,
+        invaderAttack: 6, invaderDefense: 4,
       }),
-    ).toEqual({
-      heroHp: 24,
-      enemyHp: 0,
-      damageDealt: 5,
-      damageTaken: 0,
-      victory: true,
-      defeat: false,
-    });
+    ).toMatchObject({ guardianHp: 10, invaderHp: 10, damageDealt: 0, damageTaken: 0 });
   });
 
-  it.each(["heroHp", "enemyHp", "heroDamage", "heroDefense", "enemyAttack"] as const)(
+  it("clamps overkill damage and skips the counterattack", () => {
+    expect(resolveCombatExchange({
+      guardianHp: 3, invaderHp: 2, guardianAttack: 20, guardianDefense: 0,
+      invaderAttack: 20, invaderDefense: 1,
+    })).toEqual({ guardianHp: 3, invaderHp: 0, damageDealt: 19, damageTaken: 0, victory: true, defeat: false });
+  });
+
+  it("returns defeat when the invader's counterattack is lethal", () => {
+    expect(resolveCombatExchange({
+      guardianHp: 3, invaderHp: 10, guardianAttack: 2, guardianDefense: 1,
+      invaderAttack: 6, invaderDefense: 1,
+    })).toMatchObject({ guardianHp: 0, invaderHp: 9, victory: false, defeat: true });
+  });
+
+  it("respects guardian-first order when both attacks look lethal", () => {
+    expect(resolveCombatExchange({
+      guardianHp: 1, invaderHp: 1, guardianAttack: 1, guardianDefense: 0,
+      invaderAttack: 1, invaderDefense: 0,
+    })).toMatchObject({ guardianHp: 1, invaderHp: 0, damageTaken: 0, victory: true, defeat: false });
+  });
+
+  it.each(["guardianHp", "invaderHp", "guardianAttack", "guardianDefense", "invaderAttack", "invaderDefense"] as const)(
     "rejects an invalid %s",
     (field) => {
       expect(() =>
         resolveCombatExchange({
-          heroHp: 24,
-          enemyHp: 18,
-          heroDamage: 5,
-          heroDefense: 2,
-          enemyAttack: 6,
+          guardianHp: 24, invaderHp: 18, guardianAttack: 5, guardianDefense: 2,
+          invaderAttack: 6, invaderDefense: 2,
           [field]: -1,
         }),
       ).toThrow(`${field} must be a non-negative safe integer`);
+
+      expect(() => resolveCombatExchange({
+        guardianHp: 24, invaderHp: 18, guardianAttack: 5, guardianDefense: 2,
+        invaderAttack: 6, invaderDefense: 2, [field]: Number.MAX_SAFE_INTEGER + 1,
+      })).toThrow(`${field} must be a non-negative safe integer`);
     },
   );
+});
+
+describe("createAttackRoll", () => {
+  it.each([4, 6, 8, 10, 12, 20] as const)("creates D%s rolls and marks only the maximum critical", (sides) => {
+    expect(createAttackRoll(sides, 1)).toEqual({ sides, result: 1, critical: false });
+    expect(createAttackRoll(sides, sides)).toEqual({ sides, result: sides, critical: true });
+  });
+
+  it.each([0, 1.5, 21, Number.MAX_SAFE_INTEGER + 1])("rejects invalid results", (result) => {
+    expect(() => createAttackRoll(20, result)).toThrow("attack roll result must be an integer from 1 to 20");
+  });
 });
 
 describe("resolveTurn", () => {

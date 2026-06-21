@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CombatDieKind, CombatDieResult } from "@/modules/game-engine/types";
-import { resolveCombatExchange } from "@/modules/game-engine/combat";
+import { resolveLegacyCombatExchange } from "@/modules/game-engine/combat";
 import type { CombatPresentationPhase, EnemyAttackDie } from "./CombatDiceOverlay";
 
 type AutoCombatPhase = CombatPresentationPhase | "idle";
@@ -107,7 +107,7 @@ export function useAutoCombat({
         return;
       }
       if (phase === "resolving") {
-        const result = resolveCombatExchange({
+        const result = resolveLegacyCombatExchange({
           heroHp,
           enemyHp,
           heroDamage: dice.damage.value,
