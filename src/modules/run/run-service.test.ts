@@ -48,7 +48,11 @@ function serviceHarness(state: RunState, version = 4) {
 describe("run service interactive commands", () => {
   it.each([
     ["phase", { campaignPhaseIndex: 0 }],
+    ["unknown phase", { phase: "combat-but-forged" }],
+    ["extra field", { finalScore: 999_999 }],
     ["outcome", { outcome: "victory", phase: "map-reveal" }],
+    ["defeat not terminal", { outcome: "defeat", guardianHp: 0, heroHp: 0, phase: "map-reveal" }],
+    ["complete without terminal outcome", { outcome: "ongoing", phase: "complete" }],
     ["slots", { equipment: { "caretaker-slime": { weapon: null, armor: null, accessory: null, ring: null } } }],
     ["item", { inventory: ["forged-item"] }],
     ["equipment ownership", { equipment: { "caretaker-slime": { weapon: "sharp-sword", armor: null, accessory: null } } }],
@@ -64,6 +68,42 @@ describe("run service interactive commands", () => {
     await expect(execution).rejects.not.toThrow(/invalid-canonical-secret/);
   });
 
+  it("round-trips a terminal defeat persisted by the reducer", async () => {
+    const base = createRun({ seed: "terminal-defeat-secret", guardianId: "caretaker-slime" });
+    const defeated = {
+      ...base,
+      sequence: 4,
+      phase: "complete" as const,
+      outcome: "defeat" as const,
+      guardianHp: 0,
+      heroHp: 0,
+      handledRoomCommandIds: ["defeat-replay"],
+    };
+    const { service } = serviceHarness(defeated);
+
+    const response = await service.execute("user-1", "run-1", "terminal-defeat-key", {
+      type: "LEAVE_MERCHANT",
+      commandId: "defeat-replay",
+    });
+
+    expect(response.state).toMatchObject({ phase: "complete", outcome: "defeat", guardianHp: 0 });
+  });
+
+  it("rejects legacy starter migration when the legacy route has already progressed", async () => {
+    const base = createRun({ seed: "progressed-legacy-secret", guardianId: "caretaker-slime" });
+    const legacy = persisted(base) as Record<string, unknown>;
+    for (const key of ["campaignPhaseIndex", "completedRoomCount", "outcome", "guardianId", "unlockedGuardianIds", "guardianHp", "guardianMaxHp", "guardianNaturalDefense", "invaderId", "invaderHp", "invaderMaxHp", "invaderNaturalDefense", "inventory", "consumables", "equipment"]) delete legacy[key];
+    legacy.heroHp = 24;
+    legacy.heroMaxHp = 24;
+    legacy.visitedRoomIds = [base.availableRoomIds[0]];
+    const { service } = serviceHarness({ ...legacy, seed: base.seed } as unknown as RunState);
+
+    await expect(service.execute("user-1", "run-1", "progressed-legacy-key", {
+      type: "ACKNOWLEDGE_MAP_REVEAL",
+      sequence: 1,
+    })).rejects.toThrow("stored run state is invalid");
+  });
+
   it("rejects forged partial canonical state instead of applying legacy defaults", async () => {
     const base = createRun({ seed: "partial-canonical-secret", guardianId: "caretaker-slime" });
     const legacy = persisted(base) as Record<string, unknown>;
@@ -77,7 +117,7 @@ describe("run service interactive commands", () => {
   it("safely migrates an unambiguous legacy starter state", async () => {
     const base = createRun({ seed: "safe-legacy-seed", guardianId: "caretaker-slime" });
     const legacy = persisted(base) as Record<string, unknown>;
-    for (const key of ["campaignPhaseIndex", "completedRoomCount", "outcome", "guardianId", "unlockedGuardianIds", "guardianHp", "guardianMaxHp", "guardianNaturalDefense", "invaderId", "invaderHp", "invaderMaxHp", "invaderNaturalDefense", "consumables", "equipment"]) delete legacy[key];
+    for (const key of ["campaignPhaseIndex", "completedRoomCount", "outcome", "guardianId", "unlockedGuardianIds", "guardianHp", "guardianMaxHp", "guardianNaturalDefense", "invaderId", "invaderHp", "invaderMaxHp", "invaderNaturalDefense", "inventory", "consumables", "equipment"]) delete legacy[key];
     legacy.heroHp = 24;
     legacy.heroMaxHp = 24;
     const { service } = serviceHarness({ ...legacy, seed: base.seed } as unknown as RunState);
@@ -86,8 +126,27 @@ describe("run service interactive commands", () => {
     });
     expect(response.state).toMatchObject({ guardianId: "caretaker-slime", campaignPhaseIndex: 1, outcome: "ongoing" });
   });
+
+  it("starts canonical guardian runs only", async () => {
+    const create = vi.fn(async (data: unknown) => ({
+      id: "run-1",
+      version: 0,
+      ...(data as { data: Record<string, unknown> }).data,
+    }));
+    const prisma = {
+      runCommand: { findUnique: vi.fn(async () => null) },
+      run: { create },
+    };
+    const service = createRunService({ prisma: prisma as unknown as PrismaClient, seedSecret: secret });
+
+    const response = await service.start("user-1", "caretaker-slime");
+
+    expect(create).toHaveBeenCalled();
+    expect(response.state).toMatchObject({ guardianId: "caretaker-slime", outcome: "ongoing" });
+    expect(response.state).not.toHaveProperty("seed");
+  });
   it("persists the reducer-assigned sequence for commands without sequence", async () => {
-    const base = createRun({ seed: "service-merchant", heroId: "squire" });
+    const base = createRun({ seed: "service-merchant", guardianId: "caretaker-slime" });
     const state = {
       ...base,
       currentRoomId: base.map.layers[0]!.nodes[0]!.id,
@@ -106,7 +165,7 @@ describe("run service interactive commands", () => {
   });
 
   it("returns a commandId replay without writes or version bump", async () => {
-    const base = createRun({ seed: "service-replay", heroId: "squire" });
+    const base = createRun({ seed: "service-replay", guardianId: "caretaker-slime" });
     const state = { ...base, sequence: 3, handledRoomCommandIds: ["leave-replayed"] };
     const { service, updateMany, create } = serviceHarness(state, 8);
 
@@ -122,7 +181,7 @@ describe("run service interactive commands", () => {
   });
 
   it("recovers a concurrent commandId replay after losing the version race", async () => {
-    const base = createRun({ seed: "service-race", heroId: "squire" });
+    const base = createRun({ seed: "service-race", guardianId: "caretaker-slime" });
     const initial = {
       ...base,
       currentRoomId: base.map.layers[0]!.nodes[0]!.id,
@@ -165,8 +224,8 @@ describe("run service interactive commands", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("normalizes legacy room fields before entering an interactive room", async () => {
-    const base = createRun({ seed: "service-legacy", heroId: "squire" });
+  it("rejects progressed legacy room state with missing interactive fields", async () => {
+    const base = createRun({ seed: "service-legacy", guardianId: "caretaker-slime" });
     const firstRoom = base.map.layers[0]!.nodes[0]!;
     const current = {
       ...base,
@@ -198,19 +257,13 @@ describe("run service interactive commands", () => {
     };
     const service = createRunService({ prisma: prisma as unknown as PrismaClient, seedSecret: secret });
 
-    const response = await service.execute("user-1", "run-1", "legacy-http-key", {
+    await expect(service.execute("user-1", "run-1", "legacy-http-key", {
       type: "CHOOSE_ROOM", sequence: 1, roomId: firstRoom.id,
-    });
-
-    expect(response.state.inventory).toEqual([]);
-    expect(response.state.handledRoomCommandIds).toEqual([]);
-    expect(response.state.purchasedMerchantOfferIds).toEqual([]);
-    expect(response.state.pendingRoom?.kind).toBe("merchant");
-    expect(response.state).not.toHaveProperty("seed");
+    })).rejects.toThrow("stored run state is invalid");
   });
 
   it("rejects a forged persisted inventory item without exposing the seed", async () => {
-    const base = createRun({ seed: "private-inventory-seed", heroId: "squire" });
+    const base = createRun({ seed: "private-inventory-seed", guardianId: "caretaker-slime" });
     const forged = { ...base, inventory: ["forged-item"] } as unknown as RunState;
     const { service } = serviceHarness(forged);
 
@@ -223,7 +276,7 @@ describe("run service interactive commands", () => {
   });
 
   it("rejects malformed persisted room command ids", async () => {
-    const base = createRun({ seed: "invalid-command-id-seed", heroId: "squire" });
+    const base = createRun({ seed: "invalid-command-id-seed", guardianId: "caretaker-slime" });
     const malformed = {
       ...base,
       handledRoomCommandIds: ["UPPERCASE"],
@@ -237,7 +290,7 @@ describe("run service interactive commands", () => {
   });
 
   it("rejects a persisted merchant pending room without a valid offer", async () => {
-    const base = createRun({ seed: "invalid-pending-seed", heroId: "squire" });
+    const base = createRun({ seed: "invalid-pending-seed", guardianId: "caretaker-slime" });
     const malformed = { ...base, pendingRoom: { kind: "merchant" } } as unknown as RunState;
     const { service } = serviceHarness(malformed);
 
@@ -247,7 +300,7 @@ describe("run service interactive commands", () => {
   });
 
   it("rejects a treasure offer without one option of each reward kind", async () => {
-    const base = createRun({ seed: "invalid-treasure-seed", heroId: "squire" });
+    const base = createRun({ seed: "invalid-treasure-seed", guardianId: "caretaker-slime" });
     const offer = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const goldPayload = offer.options[0].payload;
     const malformed = {
@@ -265,7 +318,7 @@ describe("run service interactive commands", () => {
   });
 
   it("rejects an event result for an option that was not offered", async () => {
-    const base = createRun({ seed: "invalid-event-seed", heroId: "squire" });
+    const base = createRun({ seed: "invalid-event-seed", guardianId: "caretaker-slime" });
     const event = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance")!;
     const offer = createEventOffer(event, base.seed, 0);
     const malformed = {

@@ -5,14 +5,12 @@ import { createHeroProgression } from "@/modules/game-engine/progression";
 import type { RunState } from "./state";
 
 type CreateRunInput = Readonly<{ seed: string; guardianId: string }>;
-type LegacyCreateRunInput = Readonly<{ seed: string; heroId: string }>;
 
-export function createRun(input: CreateRunInput | LegacyCreateRunInput): RunState {
+export function createRun(input: CreateRunInput): RunState {
   if (input.seed.length < 8) throw new Error("seed must contain at least 8 characters");
 
   const season = loadSeason(seasonOne);
-  const guardianId = "guardianId" in input ? input.guardianId : input.heroId === "squire" ? "caretaker-slime" : input.heroId;
-  const guardian = seasonOne.guardians.find((candidate) => candidate.id === guardianId);
+  const guardian = seasonOne.guardians.find((candidate) => candidate.id === input.guardianId);
   if (!guardian) throw new Error("unknown guardian");
   if (guardian.unlock.kind !== "starter") throw new Error("guardian is not unlocked");
   const hero = season.heroes.find((candidate) => candidate.id === "squire")!;

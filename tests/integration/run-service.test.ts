@@ -21,7 +21,7 @@ describe("run service", () => {
 
   it("stores one command for concurrent requests with the same idempotency key", async () => {
     const user = await prisma.user.create({ data: { email: "invoker@example.test" } });
-    const run = await service.start(user.id, "squire");
+    const run = await service.start(user.id, "caretaker-slime");
     await prisma.run.update({
       where: { id: run.id },
       data: {
@@ -48,7 +48,7 @@ describe("run service", () => {
   it("does not reveal a run owned by another user", async () => {
     const owner = await prisma.user.create({ data: { email: "owner@example.test" } });
     const attacker = await prisma.user.create({ data: { email: "attacker@example.test" } });
-    const run = await service.start(owner.id, "squire");
+    const run = await service.start(owner.id, "caretaker-slime");
 
     await expect(
       service.execute(attacker.id, run.id, "22222222-2222-4222-8222-222222222222", {

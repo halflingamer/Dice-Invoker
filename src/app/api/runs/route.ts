@@ -4,7 +4,7 @@ import { getRunService } from "@/modules/run/run-service-instance";
 import { parseJsonBody, RequestValidationError } from "@/modules/security/request";
 import { createMemoryRateLimiter } from "@/modules/security/rate-limit";
 
-const startRunSchema = z.object({ heroId: z.string().regex(/^[a-z0-9-]+$/) }).strict();
+const startRunSchema = z.object({ guardianId: z.string().regex(/^[a-z0-9-]+$/) }).strict();
 const limiter = createMemoryRateLimiter();
 
 export async function POST(request: Request) {
@@ -14,8 +14,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "rate_limit_exceeded" }, { status: 429 });
   }
   try {
-    const { heroId } = await parseJsonBody(request, startRunSchema);
-    return Response.json(await getRunService().start(session.user.id, heroId), { status: 201 });
+    const { guardianId } = await parseJsonBody(request, startRunSchema);
+    return Response.json(await getRunService().start(session.user.id, guardianId), { status: 201 });
   } catch (error) {
     if (error instanceof RequestValidationError) {
       return Response.json({ error: error.message }, { status: 400 });

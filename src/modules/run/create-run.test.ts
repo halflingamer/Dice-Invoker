@@ -35,4 +35,8 @@ describe("createRun guardian campaign state", () => {
   it("rejects non-starter and unknown guardians", () => {
     expect(() => createRun({ seed: "canonical-run-seed", guardianId: "unknown" })).toThrow("unknown guardian");
   });
+
+  it("rejects legacy hero input at the canonical creation boundary", () => {
+    expect(() => createRun({ seed: "canonical-run-seed", heroId: "squire" } as never)).toThrow("unknown guardian");
+  });
 });

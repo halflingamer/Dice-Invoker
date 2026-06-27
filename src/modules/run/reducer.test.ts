@@ -8,7 +8,7 @@ import { createRun } from "./create-run";
 import { applyCommand } from "./reducer";
 
 function readyToRollRun() {
-  const run = createRun({ seed: "server-seed", heroId: "squire" });
+  const run = createRun({ seed: "server-seed", guardianId: "caretaker-slime" });
   return {
     ...run,
     phase: "ready-to-roll" as const,
@@ -20,7 +20,7 @@ function readyToRollRun() {
 const at = (milliseconds: number) => ({ now: () => milliseconds });
 
 function enterInteractiveRoom(type: "merchant" | "treasure" | "event") {
-  const base = createRun({ seed: `interactive-${type}`, heroId: "squire" });
+  const base = createRun({ seed: `interactive-${type}`, guardianId: "caretaker-slime" });
   const room = base.map.layers[0]!.nodes[0]!;
   const map = {
     ...base.map,
@@ -37,7 +37,7 @@ function enterInteractiveRoom(type: "merchant" | "treasure" | "event") {
 
 describe("run reducer", () => {
   it("starts before the first choice with an authoritative rolled map and D4 class", () => {
-    const run = createRun({ seed: "server-seed", heroId: "squire" });
+    const run = createRun({ seed: "server-seed", guardianId: "caretaker-slime" });
 
     expect(run.phase).toBe("map-reveal");
     expect(run.map.layers).toHaveLength(4);
@@ -60,7 +60,7 @@ describe("run reducer", () => {
   });
 
   it("acknowledges the map before accepting a first room", () => {
-    const run = createRun({ seed: "server-seed", heroId: "squire" });
+    const run = createRun({ seed: "server-seed", guardianId: "caretaker-slime" });
 
     expect(() => applyCommand(run, {
       type: "CHOOSE_ROOM",
@@ -74,7 +74,7 @@ describe("run reducer", () => {
 
   it("derives legal routes from the official graph", () => {
     const run = applyCommand(
-      createRun({ seed: "route-seed", heroId: "squire" }),
+      createRun({ seed: "route-seed", guardianId: "caretaker-slime" }),
       { type: "ACKNOWLEDGE_MAP_REVEAL", sequence: 1 },
     );
     const firstRoomId = run.map.layers[0]!.nodes[0]!.id;
@@ -93,7 +93,7 @@ describe("run reducer", () => {
   });
 
   it("accepts only server-offered promotions and no forged progression fields", () => {
-    const base = createRun({ seed: "promotion-seed", heroId: "squire" });
+    const base = createRun({ seed: "promotion-seed", guardianId: "caretaker-slime" });
     const promoting = {
       ...base,
       phase: "promotion" as const,
@@ -351,7 +351,7 @@ describe("run reducer", () => {
   });
 
   it("buys only active merchant offers, checks funds and prevents duplicate passives", () => {
-    const base = createRun({ seed: "merchant-tests", heroId: "squire" });
+    const base = createRun({ seed: "merchant-tests", guardianId: "caretaker-slime" });
     const offer = createMerchantOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const sword = offer.options.find((option) => RUN_ITEMS[option.itemId].kind === "passive")!;
     const run = { ...base, gold: 12, pendingRoom: { kind: "merchant" as const, offer } };
@@ -405,7 +405,7 @@ describe("run reducer", () => {
   });
 
   it("allows exactly one authoritative treasure choice", () => {
-    const base = createRun({ seed: "treasure-tests", heroId: "squire" });
+    const base = createRun({ seed: "treasure-tests", guardianId: "caretaker-slime" });
     const offer = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const gold = offer.options.find((option) => option.payload.kind === "gold")!;
     const run = { ...base, currentRoomId: base.map.layers[0]!.nodes[0]!.id, pendingRoom: { kind: "treasure" as const, offer } };
@@ -427,7 +427,7 @@ describe("run reducer", () => {
   });
 
   it("clamps treasure essence at maxEssence", () => {
-    const base = createRun({ seed: "treasure-essence", heroId: "squire" });
+    const base = createRun({ seed: "treasure-essence", guardianId: "caretaker-slime" });
     const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const option = { ...generated.options[0], payload: { kind: "essence" as const, amount: 5 } };
     const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
@@ -441,7 +441,7 @@ describe("run reducer", () => {
   });
 
   it("grants a treasure passive without charging gold", () => {
-    const base = createRun({ seed: "treasure-passive", heroId: "squire" });
+    const base = createRun({ seed: "treasure-passive", guardianId: "caretaker-slime" });
     const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const option = { ...generated.options[0], payload: { kind: "item" as const, itemId: "sharp-sword" as const } };
     const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
@@ -456,7 +456,7 @@ describe("run reducer", () => {
   });
 
   it("uses a treasure potion for free without storing it", () => {
-    const base = createRun({ seed: "treasure-potion", heroId: "squire" });
+    const base = createRun({ seed: "treasure-potion", guardianId: "caretaker-slime" });
     const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const option = { ...generated.options[0], payload: { kind: "item" as const, itemId: "healing-potion" as const } };
     const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
@@ -472,7 +472,7 @@ describe("run reducer", () => {
   });
 
   it("applies the tax amulet bonus to treasure gold", () => {
-    const base = createRun({ seed: "treasure-tax", heroId: "squire" });
+    const base = createRun({ seed: "treasure-tax", guardianId: "caretaker-slime" });
     const generated = createTreasureOffer(base.seed, 0, Object.keys(RUN_ITEMS));
     const option = { ...generated.options[0], payload: { kind: "gold" as const, amount: 10 } };
     const offer = { ...generated, options: [option, generated.options[1], generated.options[2]] as const };
@@ -509,7 +509,7 @@ describe("run reducer", () => {
   });
 
   it("accepts only rooms exposed by the official state", () => {
-    const base = createRun({ seed: "server-seed", heroId: "squire" });
+    const base = createRun({ seed: "server-seed", guardianId: "caretaker-slime" });
     const run = { ...base, phase: "room-choice" as const };
 
     expect(() => applyCommand(run, { type: "CHOOSE_ROOM", sequence: 1, roomId: "room-9-9" })).toThrow(/available/i);
@@ -517,7 +517,7 @@ describe("run reducer", () => {
   });
 
   it("accepts only reward ids present in the official offer", () => {
-    const base = createRun({ seed: "server-seed", heroId: "squire" });
+    const base = createRun({ seed: "server-seed", guardianId: "caretaker-slime" });
     const rewardOffer = createRewardOffer(base.seed, base.rngCursors.reward, seasonOne.dice.map((die) => die.id));
     const run = { ...base, phase: "reward" as const, rewardOffer };
 
@@ -525,7 +525,7 @@ describe("run reducer", () => {
   });
 
   it("accepts only event option ids present in the legacy official offer", () => {
-    const base = createRun({ seed: "server-seed", heroId: "squire" });
+    const base = createRun({ seed: "server-seed", guardianId: "caretaker-slime" });
     const event = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance")!;
     const eventOffer = createEventOffer(event, base.seed, base.rngCursors.event);
     const run = {
