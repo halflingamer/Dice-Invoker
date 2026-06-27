@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { seasonOne } from "@/modules/content/season-1";
 import { createCampaignMaps } from "@/modules/game-engine/campaign";
+import {
+  consumeItem,
+  equipItem,
+  unequipItem,
+  type ConsumableStacks,
+  type EquipmentByGuardian,
+  type EquipmentSlot,
+  type RunItemId,
+} from "@/modules/game-engine/economy";
 import type { RunMap } from "@/modules/game-engine/map";
 import type { RunOutcome } from "@/modules/run/state";
 
@@ -11,6 +20,8 @@ export type CampaignSurface = "map" | "combat" | "merchant" | "treasure" | "even
 type PreviewCampaignInput = Readonly<{
   seed: string;
   guardianHp?: number;
+  initialInventory?: readonly RunItemId[];
+  initialConsumables?: ConsumableStacks;
 }>;
 
 type CombatTestInput = Readonly<{
@@ -25,6 +36,18 @@ export type PreviewCampaignView = Readonly<{
   visitedRoomIds: readonly string[];
   completedRoomCount: number;
   outcome: RunOutcome;
+  currentRoomId: string | null;
+  currentPhaseName: string;
+  inventoryOpen: boolean;
+  canManageInventory: boolean;
+  inventory: readonly RunItemId[];
+  consumables: ConsumableStacks;
+  equipment: EquipmentByGuardian;
+  openInventory(): void;
+  closeInventory(): void;
+  equip(itemId: RunItemId): void;
+  unequip(slot: EquipmentSlot): void;
+  useConsumable(itemId: RunItemId): void;
   chooseRoom(roomId: string): void;
   resolveRoomForTest(): void;
   startCombatForTest(input: CombatTestInput): void;
@@ -38,13 +61,22 @@ export function usePreviewCampaign(input: PreviewCampaignInput): PreviewCampaign
     maps[0]!.map.layers[0]!.nodes.map((node) => node.id),
   );
   const [visitedRoomIds, setVisitedRoomIds] = useState<readonly string[]>([]);
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [pendingNextIds, setPendingNextIds] = useState<readonly string[]>([]);
   const [completedRoomCount, setCompletedRoomCount] = useState(0);
   const [guardianHp, setGuardianHp] = useState(input.guardianHp ?? 28);
   const [outcome, setOutcome] = useState<RunOutcome>("ongoing");
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [inventory, setInventory] = useState<readonly RunItemId[]>(input.initialInventory ?? []);
+  const [consumables, setConsumables] = useState<ConsumableStacks>(input.initialConsumables ?? {});
+  const [equipment, setEquipment] = useState<EquipmentByGuardian>({
+    "caretaker-slime": { weapon: null, armor: null, accessory: null },
+  });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentMap = maps[phaseOffset]!.map;
+  const currentPhaseName = seasonOne.phases[phaseOffset]?.name ?? "Dungeon";
+  const canManageInventory = surface === "map" && outcome === "ongoing";
 
   const clearCombatTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -60,6 +92,7 @@ export function usePreviewCampaign(input: PreviewCampaignInput): PreviewCampaign
     setGuardianHp(0);
     setOutcome("defeat");
     setSurface("result");
+    setInventoryOpen(false);
     setAvailableRoomIds([]);
     setPendingNextIds([]);
   }, [clearCombatTimer]);
@@ -72,10 +105,42 @@ export function usePreviewCampaign(input: PreviewCampaignInput): PreviewCampaign
     setPendingNextIds([]);
   }, [clearCombatTimer, outcome, pendingNextIds]);
 
+  const openInventory = useCallback(() => {
+    if (canManageInventory) setInventoryOpen(true);
+  }, [canManageInventory]);
+
+  const closeInventory = useCallback(() => setInventoryOpen(false), []);
+
+  const equip = useCallback((itemId: RunItemId) => {
+    if (!canManageInventory) return;
+    const next = equipItem({ inventory, consumables, equipment }, "caretaker-slime", itemId);
+    setEquipment(next.equipment);
+    setInventory(next.inventory);
+    setConsumables(next.consumables);
+  }, [canManageInventory, consumables, equipment, inventory]);
+
+  const unequip = useCallback((slot: EquipmentSlot) => {
+    if (!canManageInventory) return;
+    const next = unequipItem({ inventory, consumables, equipment }, "caretaker-slime", slot);
+    setEquipment(next.equipment);
+  }, [canManageInventory, consumables, equipment, inventory]);
+
+  const useConsumable = useCallback((itemId: RunItemId) => {
+    if (!canManageInventory) return;
+    const consumed = consumeItem({ inventory, consumables, equipment }, "caretaker-slime", itemId, {
+      hp: guardianHp,
+      maxHp: 28,
+    });
+    setConsumables(consumed.inventoryState.consumables);
+    setGuardianHp(consumed.guardianHp);
+  }, [canManageInventory, consumables, equipment, guardianHp, inventory]);
+
   const chooseRoom = useCallback((roomId: string) => {
     if (outcome !== "ongoing" || !availableRoomIds.includes(roomId)) return;
     const node = currentMap.layers.flatMap((layer) => layer.nodes).find((candidate) => candidate.id === roomId);
     if (!node) return;
+    setCurrentRoomId(roomId);
+    setInventoryOpen(false);
     setVisitedRoomIds((current) => [...current, roomId]);
     setCompletedRoomCount((current) => current + 1);
     setPendingNextIds([...node.nextNodeIds]);
@@ -90,6 +155,7 @@ export function usePreviewCampaign(input: PreviewCampaignInput): PreviewCampaign
       const nextMap = maps[nextOffset]!.map;
       setPhaseOffset(nextOffset);
       setVisitedRoomIds([]);
+      setCurrentRoomId(null);
       setCompletedRoomCount(0);
       setPendingNextIds([]);
       setAvailableRoomIds(nextMap.layers[0]!.nodes.map((nextNode) => nextNode.id));
@@ -135,6 +201,18 @@ export function usePreviewCampaign(input: PreviewCampaignInput): PreviewCampaign
     visitedRoomIds,
     completedRoomCount,
     outcome,
+    currentRoomId,
+    currentPhaseName,
+    inventoryOpen,
+    canManageInventory,
+    inventory,
+    consumables,
+    equipment,
+    openInventory,
+    closeInventory,
+    equip,
+    unequip,
+    useConsumable,
     chooseRoom,
     resolveRoomForTest,
     startCombatForTest,

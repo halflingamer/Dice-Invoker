@@ -23,6 +23,13 @@ it("identifies the Hostinger static build as a non-ranked demonstration", () => 
   );
 });
 
+it("shows the central route and inventory action between rooms", () => {
+  render(<CombatStage />);
+
+  expect(screen.getByRole("region", { name: /Escolha.*local/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /Abrir invent/i })).toBeEnabled();
+});
+
 it("starts automatic damage and defense rolls after choosing combat", () => {
   vi.useFakeTimers();
   const combatMap: RunMap = {
@@ -68,7 +75,7 @@ it.each([
   fireEvent.click(within(container).getByRole("button", { name: new RegExp(type === "merchant" ? "Mercador" : type === "treasure" ? "Tesouro" : "Evento", "i") }));
 
   expect(screen.getByRole("dialog", { name: dialogName })).toBeInTheDocument();
-  expect(container.querySelector('button[aria-label="Combate, bloqueado"]')).toBeDisabled();
+  expect(screen.queryByRole("region", { name: /Escolha.*local/i })).toBeNull();
 });
 
 it.each([

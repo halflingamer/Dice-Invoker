@@ -2,7 +2,14 @@
 
 import { Fragment, useState } from "react";
 import { seasonOne } from "@/modules/content/season-1";
-import { purchaseLegacyItem, RUN_ITEMS, type RunItemId } from "@/modules/game-engine/economy";
+import {
+  purchaseLegacyItem,
+  RUN_ITEMS,
+  type ConsumableStacks,
+  type EquipmentByGuardian,
+  type EquipmentSlot,
+  type RunItemId,
+} from "@/modules/game-engine/economy";
 import { createEventOffer, resolveEventChoice, type EventChoiceResult, type EventOffer } from "@/modules/game-engine/events";
 import type { RunMap as RunMapModel, RoomType } from "@/modules/game-engine/map";
 import {
@@ -13,14 +20,15 @@ import {
   type MerchantOffer,
   type TreasureOffer,
 } from "@/modules/game-engine/rewards";
+import { CampaignMap } from "./CampaignMap";
 import { CombatDiceOverlay } from "./CombatDiceOverlay";
 import { EssenceMeter } from "./EssenceMeter";
 import { EventRoom } from "./EventRoom";
 import { HeroSheet } from "./HeroSheet";
+import { InventoryDrawer } from "./InventoryDrawer";
 import { MerchantRoom } from "./MerchantRoom";
 import { PhaserBattle, type BattleAnimationEvent } from "./PhaserBattle";
 import { PromotionChoice } from "./PromotionChoice";
-import { RunMap } from "./RunMap";
 import { TreasureRoom } from "./TreasureRoom";
 import { previewRunMap } from "./preview-run-adapter";
 import { useAutoCombat } from "./use-auto-combat";
@@ -58,12 +66,18 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
   const [gold, setGold] = useState(12);
   const [runEssence, setRunEssence] = useState(2);
   const [inventory, setInventory] = useState<readonly RunItemId[]>([]);
+  const [consumables, setConsumables] = useState<ConsumableStacks>({});
+  const [equipment, setEquipment] = useState<EquipmentByGuardian>({
+    "caretaker-slime": { weapon: null, armor: null, accessory: null },
+  });
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [classSides, setClassSides] = useState<4 | 6>(4);
   const [className, setClassName] = useState("Escudeiro");
   const [promotionOpen, setPromotionOpen] = useState(false);
   const [event, setEvent] = useState<BattleAnimationEvent | null>(null);
   const [message, setMessage] = useState("Escolha um Dado de Local alcançável.");
   const isHostingerPreview = process.env.NEXT_PUBLIC_HOSTINGER_PREVIEW === "1";
+  const mapSurfaceActive = !combatActive && !pendingRoom && !promotionOpen;
 
   const finishCombat = () => {
     setCombatActive(false);
@@ -110,6 +124,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       availableRoomIds: isCombat || isInteractive ? [] : [...node.nextNodeIds],
     }));
     setRoomError(null);
+    setInventoryOpen(false);
 
     if (isCombat) {
       const rank = node.type as "combat" | "elite" | "boss";
@@ -155,6 +170,44 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       setRunEssence((current) => Math.max(0, current - 1));
     }
     setEvent({ id: Date.now(), type: "reroll" });
+  };
+
+  const equipInventoryItem = (itemId: RunItemId) => {
+    if (!mapSurfaceActive) return;
+    const item = RUN_ITEMS[itemId];
+    if (item.kind !== "passive") return;
+    setEquipment((current) => ({
+      ...current,
+      "caretaker-slime": {
+        ...(current["caretaker-slime"] ?? { weapon: null, armor: null, accessory: null }),
+        [item.slot]: itemId,
+      },
+    }));
+  };
+
+  const unequipInventorySlot = (slot: EquipmentSlot) => {
+    if (!mapSurfaceActive) return;
+    setEquipment((current) => ({
+      ...current,
+      "caretaker-slime": {
+        ...(current["caretaker-slime"] ?? { weapon: null, armor: null, accessory: null }),
+        [slot]: null,
+      },
+    }));
+  };
+
+  const useInventoryConsumable = (itemId: RunItemId) => {
+    if (!mapSurfaceActive) return;
+    const count = consumables[itemId] ?? 0;
+    const item = RUN_ITEMS[itemId];
+    if (count <= 0 || item.kind !== "consumable") return;
+    setHeroHp((current) => Math.min(24, current + item.effect.heal));
+    setConsumables((current) => {
+      const next = { ...current };
+      if (count === 1) delete next[itemId];
+      else next[itemId] = count - 1;
+      return next;
+    });
   };
 
   const buyMerchantItem = (offerId: string) => {
@@ -243,6 +296,19 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       <main className="game-shell" aria-hidden={pendingRoom ? true : undefined}>
         <HeroSheet />
         <section className="battle-column">
+          {mapSurfaceActive ? (
+            <CampaignMap
+              surface="map"
+              phaseName={seasonOne.phases[0]!.name}
+              phaseIndex={1}
+              map={initialMap}
+              availableRoomIds={route.availableRoomIds}
+              visitedRoomIds={route.visitedRoomIds}
+              currentRoomId={route.currentRoomId}
+              onChoose={chooseRoom}
+            />
+          ) : (
+            <Fragment>
           <header className="combat-header">
             <div><b>{className} D{classSides}</b><span>♥ {combat.heroHp}/24 · ● {gold} · ◆ {runEssence}</span></div>
             <div className="room-progress"><b>Sala {route.visitedRoomIds.length}/10</b><span>XP da run · evolução temporária</span></div>
@@ -262,15 +328,33 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
           <div className="status-line" aria-live="polite">
             {phaseMessage}<EssenceMeter value={runEssence} max={2} />
           </div>
+            </Fragment>
+          )}
         </section>
-        <RunMap
-          map={initialMap}
-          availableRoomIds={route.availableRoomIds}
-          visitedRoomIds={route.visitedRoomIds}
-          currentRoomId={route.currentRoomId}
-          onChoose={chooseRoom}
-        />
+        <aside className="run-tools" aria-label="Ferramentas da dungeon">
+          <button
+            type="button"
+            className="inventory-toggle"
+            disabled={!mapSurfaceActive}
+            onClick={() => setInventoryOpen(true)}
+          >
+            Abrir inventário
+          </button>
+          <p>Equipe itens apenas entre salas. Durante combate, os baús ficam trancados por segurança sindical.</p>
+        </aside>
       </main>
+      <InventoryDrawer
+        open={inventoryOpen}
+        canManage={mapSurfaceActive}
+        guardianId="caretaker-slime"
+        inventory={inventory}
+        consumables={consumables}
+        equipment={equipment}
+        onClose={() => setInventoryOpen(false)}
+        onEquip={equipInventoryItem}
+        onUnequip={unequipInventorySlot}
+        onUseConsumable={useInventoryConsumable}
+      />
       {promotionOpen ? (
         <PromotionChoice
           currentDie="D4"

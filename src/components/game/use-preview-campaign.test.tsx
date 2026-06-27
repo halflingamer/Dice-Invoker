@@ -31,4 +31,22 @@ describe("usePreviewCampaign", () => {
 
     unmount();
   });
+
+  it("manages inventory only on the map surface", () => {
+    const { result } = renderHook(() => usePreviewCampaign({
+      seed: "inventory-seed",
+      initialInventory: ["sharp-sword"],
+    }));
+
+    act(() => result.current.openInventory());
+    expect(result.current.inventoryOpen).toBe(true);
+
+    act(() => result.current.equip("sharp-sword"));
+    expect(result.current.equipment["caretaker-slime"]?.weapon).toBe("sharp-sword");
+
+    act(() => result.current.chooseRoom(result.current.availableRoomIds[0]!));
+    expect(result.current.canManageInventory).toBe(false);
+    act(() => result.current.unequip("weapon"));
+    expect(result.current.equipment["caretaker-slime"]?.weapon).toBe("sharp-sword");
+  });
 });
