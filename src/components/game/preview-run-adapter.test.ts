@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewCapabilities, previewRunMap } from "./preview-run-adapter";
+import { previewCampaignMaps, previewCapabilities, previewRunMap } from "./preview-run-adapter";
 
 describe("Hostinger preview adapter", () => {
   it("is explicitly isolated from competitive capabilities", () => {
@@ -11,9 +11,11 @@ describe("Hostinger preview adapter", () => {
     });
   });
 
-  it("contains only a fixed public demonstration map", () => {
+  it("contains seven deterministic public demonstration maps", () => {
     const serialized = JSON.stringify(previewRunMap);
-    expect(previewRunMap.layers).toHaveLength(10);
+    expect(previewCampaignMaps).toHaveLength(7);
+    expect(previewCampaignMaps.map((entry) => entry.map.layers.length)).toEqual([4, 5, 6, 7, 8, 9, 10]);
+    expect(previewRunMap).toBe(previewCampaignMaps[0]?.map);
     expect(previewRunMap.layers.at(-1)?.nodes[0]?.type).toBe("boss");
     expect(serialized).not.toMatch(/seed|secret|database|score/i);
   });

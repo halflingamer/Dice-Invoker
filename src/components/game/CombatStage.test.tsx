@@ -25,7 +25,11 @@ it("identifies the Hostinger static build as a non-ranked demonstration", () => 
 
 it("starts automatic damage and defense rolls after choosing combat", () => {
   vi.useFakeTimers();
-  const { container } = render(<CombatStage />);
+  const combatMap: RunMap = {
+    rngCursor: 0,
+    layers: [{ index: 1, nodes: [{ id: "room-combat", type: "combat", nextNodeIds: [] }] }],
+  };
+  const { container } = render(<CombatStage initialMap={combatMap} />);
 
   fireEvent.click(within(container).getByRole("button", { name: /Combate.*alcançável/i }));
   expect(within(container).getByLabelText("Dados de combate")).toHaveClass("is-rolling");
