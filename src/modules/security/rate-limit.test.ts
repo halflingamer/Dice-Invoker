@@ -25,6 +25,29 @@ describe("run command rate limit policy", () => {
     expect(runCommandRateLimitPolicy("BEGIN_COMBAT_TURN").limit).toBe(60);
   });
 
+  it("isolates inventory and new-run commands into dedicated buckets", () => {
+    expect(runCommandRateLimitPolicy("EQUIP_ITEM")).toEqual({
+      bucket: "inventory",
+      limit: 30,
+      windowMs: 60_000,
+    });
+    expect(runCommandRateLimitPolicy("UNEQUIP_ITEM")).toEqual({
+      bucket: "inventory",
+      limit: 30,
+      windowMs: 60_000,
+    });
+    expect(runCommandRateLimitPolicy("USE_CONSUMABLE")).toEqual({
+      bucket: "inventory",
+      limit: 30,
+      windowMs: 60_000,
+    });
+    expect(runCommandRateLimitPolicy("START_NEW_RUN")).toEqual({
+      bucket: "new-run",
+      limit: 5,
+      windowMs: 60_000,
+    });
+  });
+
   it("isolates the same run id between authenticated accounts", () => {
     expect(runCommandRateLimitKey("user-a", "run-1", "choose-treasure"))
       .not.toBe(runCommandRateLimitKey("user-b", "run-1", "choose-treasure"));

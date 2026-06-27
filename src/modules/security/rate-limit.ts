@@ -20,11 +20,23 @@ const ROOM_COMMAND_LIMITS: Partial<Record<RunCommand["type"], number>> = {
   ACKNOWLEDGE_EVENT_RESULT: 12,
 };
 
+const INVENTORY_COMMANDS = new Set<RunCommand["type"]>([
+  "EQUIP_ITEM",
+  "UNEQUIP_ITEM",
+  "USE_CONSUMABLE",
+]);
+
 export function runCommandRateLimitPolicy(
   commandType: RunCommand["type"],
 ): RunCommandRateLimitPolicy {
   if (commandType === "BEGIN_COMBAT_TURN" || commandType === "RESOLVE_COMBAT_TURN") {
     return { bucket: "automatic-combat", limit: 60, windowMs: 60_000 };
+  }
+  if (INVENTORY_COMMANDS.has(commandType)) {
+    return { bucket: "inventory", limit: 30, windowMs: 60_000 };
+  }
+  if (commandType === "START_NEW_RUN") {
+    return { bucket: "new-run", limit: 5, windowMs: 60_000 };
   }
   const roomLimit = ROOM_COMMAND_LIMITS[commandType];
   if (roomLimit) {

@@ -1,12 +1,23 @@
 import { loadSeason } from "@/modules/content/content-loader";
 import { seasonOne } from "@/modules/content/season-1";
 import { rollClassCombatDice, rollClassCombatDie, resolveLegacyCombatExchange } from "@/modules/game-engine/combat";
+import { generateMap } from "@/modules/game-engine/map";
 import { createNamedRollStream } from "@/modules/game-engine/rng";
 import { createEventOffer, resolveEventChoice } from "@/modules/game-engine/events";
-import { RUN_ITEMS, applyCombatBonuses, applyGoldBonus, purchaseLegacyItem, type RunItemId } from "@/modules/game-engine/economy";
+import {
+  RUN_ITEMS,
+  applyEquipmentBonuses,
+  applyGoldBonus,
+  consumeItem,
+  equipItem,
+  purchaseLegacyItem,
+  unequipItem,
+  type RunItemId,
+} from "@/modules/game-engine/economy";
 import { chooseMerchantItem, chooseReward, chooseTreasureReward, createMerchantOffer, createTreasureOffer } from "@/modules/game-engine/rewards";
 import { applyPromotion, awardExperience, getPromotionChoices } from "@/modules/game-engine/progression";
 import { runCommandSchema, type RunCommand } from "./command-schema";
+import { createRun } from "./create-run";
 import type { DieRoll, RunState } from "./state";
 
 const season = loadSeason(seasonOne);
@@ -36,6 +47,57 @@ function isRoomCommand(command: RunCommand): command is Extract<RunCommand, { co
 
 function rememberRoomCommand(state: RunState, commandId: string): Pick<RunState, "handledRoomCommandIds" | "sequence"> {
   return { handledRoomCommandIds: [...state.handledRoomCommandIds, commandId], sequence: state.sequence + 1 };
+}
+
+function rememberSequencedRoomCommand(
+  state: RunState,
+  command: Extract<RunCommand, { commandId: string } & { sequence: number }>,
+): Pick<RunState, "handledRoomCommandIds" | "sequence"> {
+  return { handledRoomCommandIds: [...state.handledRoomCommandIds, command.commandId], sequence: command.sequence };
+}
+
+function requireMapInventoryPhase(state: RunState) {
+  requirePhase(state, "room-choice");
+  if (state.pendingRoom !== null || state.outcome !== "ongoing" || state.combatTurn !== null) {
+    throw new Error("inventory command is not allowed in this phase");
+  }
+}
+
+function resetForNextCampaignPhase(state: RunState): RunState {
+  const nextPhaseIndex = state.campaignPhaseIndex + 1;
+  if (nextPhaseIndex > 7) return state;
+  const phase = seasonOne.phases[nextPhaseIndex - 1]!;
+  const map = generateMap({ seed: state.seed, phaseIndex: phase.index, roomCount: phase.roomCount });
+  return {
+    ...state,
+    map,
+    rngCursors: { ...state.rngCursors, map: map.rngCursor, encounter: 0 },
+    phase: "map-reveal",
+    campaignPhaseIndex: nextPhaseIndex as RunState["campaignPhaseIndex"],
+    completedRoomCount: 0,
+    outcome: "ongoing",
+    invaderId: "torch-bearer",
+    invaderHp: 9,
+    invaderMaxHp: 9,
+    invaderNaturalDefense: 0,
+    enemyId: "receipt-slime",
+    enemyHp: 9,
+    combatRound: 0,
+    combatTurn: null,
+    pendingRoom: null,
+    rolls: [],
+    visitedRoomIds: [],
+    currentLayer: 0,
+    currentRoomId: null,
+    availableRoomIds: map.layers[0]!.nodes.map((node) => node.id),
+    pendingPromotionIds: [],
+    rewardOffer: null,
+    eventOffer: null,
+  };
+}
+
+function createFreshRunFromState(state: RunState): RunState {
+  return createRun({ seed: state.seed, guardianId: state.guardianId });
 }
 
 function nextRoomIds(state: RunState): readonly string[] {
@@ -146,10 +208,13 @@ function applyLegacyCommand(
       if (context.now() < state.combatTurn.interventionEndsAt) {
         throw new Error("combat intervention window is still active");
       }
-      const stats = applyCombatBonuses({
-        damage: state.combatTurn.damage.value,
-        defense: state.combatTurn.defense.value,
-      }, state.inventory);
+      const equippedSlots = state.equipment[state.guardianId];
+      if (!equippedSlots) throw new Error("guardian equipment is missing");
+      const equipmentStats = applyEquipmentBonuses({
+        attack: state.combatTurn.damage.value,
+        defense: state.guardianNaturalDefense,
+        gold: 0,
+      }, state.inventory, equippedSlots);
       const healedHeroHp = Math.min(
         state.heroMaxHp,
         state.heroHp + state.combatTurn.damage.healing + state.combatTurn.defense.healing,
@@ -157,8 +222,8 @@ function applyLegacyCommand(
       const result = resolveLegacyCombatExchange({
         heroHp: healedHeroHp,
         enemyHp: state.enemyHp,
-        heroDamage: stats.damage,
-        heroDefense: stats.defense,
+        heroDamage: equipmentStats.attack,
+        heroDefense: equipmentStats.defense,
         enemyAttack: state.combatTurn.enemyAttack.result,
       });
       if (!result.victory && !result.defeat) {
@@ -191,11 +256,12 @@ function applyLegacyCommand(
       );
       const promotionChoices = getPromotionChoices(progressed, season.classStages, { roomResolved: true });
       const completedRun = currentNode?.type === "boss" || state.currentLayer === state.map.layers.length;
+      const nextPhase: RunState["phase"] = completedRun ? "complete" : promotionChoices.length > 0 ? "promotion" : "room-choice";
       const goldReward = applyGoldBonus(COMBAT_GOLD[currentCombatRank(state)], state.inventory);
-      return {
+      const resolved = {
         ...state,
         sequence: command.sequence,
-        phase: completedRun ? "complete" : promotionChoices.length > 0 ? "promotion" : "room-choice",
+        phase: nextPhase,
         heroHp: result.heroHp,
         enemyHp: 0,
         combatTurn: null,
@@ -204,6 +270,7 @@ function applyLegacyCommand(
         pendingPromotionIds: promotionChoices.map((stage) => stage.id),
         availableRoomIds: completedRun ? [] : [...(currentNode?.nextNodeIds ?? [])],
       };
+      return completedRun && state.campaignPhaseIndex < 7 ? resetForNextCampaignPhase(resolved) : resolved;
     }
     case "ROLL_DICE": {
       requirePhase(state, "ready-to-roll");
@@ -431,6 +498,34 @@ function applyLegacyCommand(
         xp: progression.xp,
         pendingPromotionIds: [],
       };
+    }
+    case "EQUIP_ITEM": {
+      requireMapInventoryPhase(state);
+      const inventoryState = equipItem(state, command.guardianId, command.itemId as RunItemId);
+      return { ...state, ...inventoryState, ...rememberSequencedRoomCommand(state, command) };
+    }
+    case "UNEQUIP_ITEM": {
+      requireMapInventoryPhase(state);
+      const inventoryState = unequipItem(state, command.guardianId, command.slot);
+      return { ...state, ...inventoryState, ...rememberSequencedRoomCommand(state, command) };
+    }
+    case "USE_CONSUMABLE": {
+      requireMapInventoryPhase(state);
+      const consumed = consumeItem(state, command.guardianId, command.itemId as RunItemId, {
+        hp: state.guardianHp,
+        maxHp: state.guardianMaxHp,
+      });
+      return {
+        ...state,
+        ...consumed.inventoryState,
+        guardianHp: consumed.guardianHp,
+        heroHp: consumed.guardianHp,
+        ...rememberSequencedRoomCommand(state, command),
+      };
+    }
+    case "START_NEW_RUN": {
+      const restarted = createFreshRunFromState(state);
+      return { ...restarted, sequence: command.sequence, handledRoomCommandIds: [command.commandId] };
     }
     default:
       return assertNever(command as never);

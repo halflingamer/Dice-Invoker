@@ -29,7 +29,7 @@ export type DieRoll = Readonly<{
 
 export type CombatTurnState = Readonly<ClassCombatDice & {
   turn: number;
-  enemyAttack: Readonly<{ sides: 4 | 6 | 8; result: number }>;
+  enemyAttack: Readonly<{ sides: 4 | 6 | 8 | 10 | 12 | 20; result: number }>;
   interventionEndsAt: number;
   rerolledDieKinds: readonly CombatDieKind[];
 }>;

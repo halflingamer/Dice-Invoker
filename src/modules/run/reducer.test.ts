@@ -19,6 +19,36 @@ function readyToRollRun() {
 
 const at = (milliseconds: number) => ({ now: () => milliseconds });
 
+function bossCombatState(overrides: Partial<ReturnType<typeof createRun>> = {}) {
+  const base = createRun({ seed: "boss-phase-seed", guardianId: "caretaker-slime" });
+  const boss = base.map.layers.at(-1)!.nodes[0]!;
+  return {
+    ...base,
+    ...overrides,
+    phase: "combat-intervention" as const,
+    currentLayer: base.map.layers.length,
+    currentRoomId: boss.id,
+    visitedRoomIds: [boss.id],
+    completedRoomCount: 1,
+    availableRoomIds: [],
+    enemyId: "collection-squire",
+    enemyHp: 1,
+    invaderId: "collection-squire",
+    invaderHp: 1,
+    invaderMaxHp: 34,
+    invaderNaturalDefense: 1,
+    combatRound: 1,
+    combatTurn: {
+      turn: 1,
+      damage: { kind: "damage" as const, sides: 4 as const, faceIndex: 4, label: "Ploft", value: 10, healing: 0 },
+      defense: { kind: "defense" as const, sides: 4 as const, faceIndex: 1, label: "Gelatina", value: 0, healing: 0 },
+      enemyAttack: { sides: 4 as const, result: 1 },
+      interventionEndsAt: 0,
+      rerolledDieKinds: [],
+    },
+  };
+}
+
 function enterInteractiveRoom(type: "merchant" | "treasure" | "event") {
   const base = createRun({ seed: `interactive-${type}`, guardianId: "caretaker-slime" });
   const room = base.map.layers[0]!.nodes[0]!;
@@ -131,6 +161,80 @@ describe("run reducer", () => {
     });
   });
 
+  it("allows equipment only while the central map is active", () => {
+    const base = createRun({ seed: "equipment-seed", guardianId: "caretaker-slime" });
+    const mapState = {
+      ...base,
+      phase: "room-choice" as const,
+      inventory: ["sharp-sword" as const],
+      equipment: { "caretaker-slime": { weapon: null, armor: null, accessory: null } },
+    };
+
+    const equipped = applyCommand(mapState, {
+      type: "EQUIP_ITEM",
+      sequence: 1,
+      commandId: "equip-1",
+      guardianId: "caretaker-slime",
+      itemId: "sharp-sword",
+    });
+
+    expect(equipped.equipment["caretaker-slime"].weapon).toBe("sharp-sword");
+    expect(() => applyCommand({ ...mapState, phase: "combat-intervention" as const }, {
+      type: "EQUIP_ITEM",
+      sequence: 1,
+      commandId: "equip-2",
+      guardianId: "caretaker-slime",
+      itemId: "sharp-sword",
+    })).toThrow(/phase/i);
+  });
+
+  it("advances from phase bosses and wins after phase seven", () => {
+    const phaseOne = applyCommand(bossCombatState({ campaignPhaseIndex: 1 }), {
+      type: "RESOLVE_COMBAT_TURN",
+      sequence: 1,
+    }, at(1));
+
+    expect(phaseOne).toMatchObject({
+      campaignPhaseIndex: 2,
+      phase: "map-reveal",
+      outcome: "ongoing",
+      currentLayer: 0,
+      currentRoomId: null,
+    });
+    expect(phaseOne.map.layers).toHaveLength(5);
+
+    const phaseSeven = applyCommand(bossCombatState({ campaignPhaseIndex: 7 }), {
+      type: "RESOLVE_COMBAT_TURN",
+      sequence: 1,
+    }, at(1));
+
+    expect(phaseSeven).toMatchObject({ campaignPhaseIndex: 7, phase: "complete", outcome: "victory" });
+  });
+
+  it("makes defeat terminal", () => {
+    const base = readyToRollRun();
+    const defeated = applyCommand({
+      ...base,
+      phase: "combat-intervention" as const,
+      enemyHp: 20,
+      invaderHp: 20,
+      combatRound: 1,
+      combatTurn: {
+        turn: 1,
+        damage: { kind: "damage" as const, sides: 4 as const, faceIndex: 1, label: "Ploft", value: 0, healing: 0 },
+        defense: { kind: "defense" as const, sides: 4 as const, faceIndex: 1, label: "Gelatina", value: 0, healing: 0 },
+        enemyAttack: { sides: 20 as const, result: 20 },
+        interventionEndsAt: 0,
+        rerolledDieKinds: [],
+      },
+      heroHp: 1,
+      guardianHp: 1,
+    }, { type: "RESOLVE_COMBAT_TURN", sequence: 1 }, at(1));
+
+    expect(defeated).toMatchObject({ guardianHp: 0, outcome: "defeat", phase: "complete", combatTurn: null });
+    expect(() => applyCommand(defeated, { type: "BEGIN_COMBAT_TURN", sequence: 2 })).toThrow(/phase/i);
+  });
+
   it("runs combat through a server-timed automatic intervention window", () => {
     const run = readyToRollRun();
 
@@ -197,7 +301,7 @@ describe("run reducer", () => {
     expect(rolling.combatTurn?.enemyAttack.result).toBeLessThanOrEqual(sides);
   });
 
-  it("applies inventory bonuses and defense mitigation while persisting hero HP", () => {
+  it("applies equipped attack and fixed defense while persisting hero HP", () => {
     const run = {
       ...readyToRollRun(),
       heroHp: 20,
@@ -206,6 +310,7 @@ describe("run reducer", () => {
       invaderHp: 20,
       invaderMaxHp: 20,
       inventory: ["sharp-sword", "reinforced-shield"] as const,
+      equipment: { "caretaker-slime": { weapon: "sharp-sword" as const, armor: "reinforced-shield" as const, accessory: null } },
       phase: "combat-intervention" as const,
       combatTurn: {
         turn: 1,
@@ -220,7 +325,7 @@ describe("run reducer", () => {
     const resolved = applyCommand(run, { type: "RESOLVE_COMBAT_TURN", sequence: 1 }, at(3_500));
 
     expect(resolved.enemyHp).toBe(16);
-    expect(resolved.heroHp).toBe(19);
+    expect(resolved.heroHp).toBe(18);
   });
 
   it("prevents the enemy counterattack on victory and awards rank gold once", () => {
