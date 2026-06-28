@@ -1,0 +1,1 @@
+Dice Invoker — prévia estática. Login, persistência e ranking competitivo permanecem desativados neste pacote.
