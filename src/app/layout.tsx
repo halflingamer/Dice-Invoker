@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Dice Invoker",
-  description: "Invoque heróis, manipule o destino e desafie os slimes tributários.",
+  description: "Invoque monstros, defenda sua dungeon e expulse aventureiros privatizadores.",
 };
 
 export default function RootLayout({

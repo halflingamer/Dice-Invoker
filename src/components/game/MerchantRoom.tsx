@@ -27,14 +27,14 @@ export function MerchantRoom({
 }>) {
   return (
     <RoomOverlay
-      title="Mercador Tributário"
+      title="Fornecedor da Dungeon"
       eyebrow="Licença comercial suspeitamente válida"
       gold={gold}
       heroHp={heroHp}
       heroMaxHp={heroMaxHp}
       essence={essence}
     >
-      <p className="room-flavor">“Preços honestos, taxas criativas e nenhuma devolução após o apocalipse.”</p>
+      <p className="room-flavor">“Suprimentos honestos para monstros honestos. Heróis pagam taxa de invasão.”</p>
       {error ? <p className="room-error" role="alert">{error}</p> : null}
       <div className="room-card-grid">
         {offer.options.map((option) => {
@@ -47,7 +47,7 @@ export function MerchantRoom({
                 {item.id === "sharp-sword" ? "⚔" : item.id === "reinforced-shield" ? "⬟" : item.id === "healing-potion" ? "✚" : "✦"}
               </span>
               <h3>{item.name}</h3>
-              <p>{item.kind === "consumable" ? "Recupera 6 de vida." : "Efeito passivo durante esta run."}</p>
+              <p>{item.kind === "consumable" ? "Repara 6 do núcleo do guardião." : "Reforço passivo para defender esta run."}</p>
               <button
                 type="button"
                 disabled={purchased || cannotAfford}
@@ -60,7 +60,7 @@ export function MerchantRoom({
           );
         })}
       </div>
-      <button className="room-leave-button" type="button" onClick={onLeave}>Sair do mercador</button>
+      <button className="room-leave-button" type="button" onClick={onLeave}>Voltar à defesa</button>
     </RoomOverlay>
   );
 }

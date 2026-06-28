@@ -33,9 +33,9 @@ export function RoomOverlay({
             <span>{eyebrow}</span>
             <h2 id="room-overlay-title" ref={headingRef} tabIndex={-1}>{title}</h2>
           </div>
-          <dl className="room-resources" aria-label="Recursos da run">
-            <div><dt>Vida</dt><dd>♥ {heroHp}/{heroMaxHp}</dd></div>
-            <div><dt>Ouro</dt><dd>● {gold}</dd></div>
+          <dl className="room-resources" aria-label="Recursos da dungeon">
+            <div><dt>Núcleo</dt><dd>♥ {heroHp}/{heroMaxHp}</dd></div>
+            <div><dt>Tesouro</dt><dd>● {gold}</dd></div>
             <div><dt>Essência</dt><dd>◆ {essence}</dd></div>
           </dl>
         </header>

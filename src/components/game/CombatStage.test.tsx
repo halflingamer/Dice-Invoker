@@ -1,10 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { CombatStage } from "./CombatStage";
 import type { RunMap } from "@/modules/game-engine/map";
+import { CombatStage } from "./CombatStage";
 
 vi.mock("./PhaserBattle", () => ({
-  PhaserBattle: () => <div aria-label="Campo de batalha" />,
+  PhaserBattle: ({ guardianName, invaderName }: { guardianName: string; invaderName: string }) => (
+    <div aria-label={`Campo de batalha: ${guardianName} contra ${invaderName}`} />
+  ),
 }));
 
 afterEach(() => {
@@ -23,14 +25,18 @@ it("identifies the Hostinger static build as a non-ranked demonstration", () => 
   );
 });
 
-it("shows the central route and inventory action between rooms", () => {
+it("shows the dungeon guardian fantasy and central route between rooms", () => {
   render(<CombatStage />);
 
+  expect(screen.getByRole("heading", { name: /Guardião da Dungeon/i })).toBeVisible();
+  expect(screen.getByRole("heading", { name: /Slime Zelador/i })).toBeVisible();
+  expect(screen.getByText(/Defenda seu lar dos aventureiros/i)).toBeVisible();
+  expect(screen.getByText(/Defenda a dungeon escolhendo qual sala proteger primeiro/i)).toBeVisible();
   expect(screen.getByRole("region", { name: /Escolha.*local/i })).toBeVisible();
   expect(screen.getByRole("button", { name: /Abrir invent/i })).toBeEnabled();
 });
 
-it("starts automatic damage and defense rolls after choosing combat", () => {
+it("starts automatic rolls with the slime defending against an invading squire", () => {
   vi.useFakeTimers();
   const combatMap: RunMap = {
     rngCursor: 0,
@@ -38,7 +44,10 @@ it("starts automatic damage and defense rolls after choosing combat", () => {
   };
   const { container } = render(<CombatStage initialMap={combatMap} />);
 
-  fireEvent.click(within(container).getByRole("button", { name: /Combate.*alcançável/i }));
+  fireEvent.click(within(container).getByRole("button", { name: /Combate.*alcan/i }));
+  expect(within(container).getByRole("banner")).toHaveTextContent(/Slime Zelador D4/i);
+  expect(within(container).getByRole("banner")).toHaveTextContent(/Escudeiro Invasor/i);
+  expect(within(container).getByLabelText(/Slime Zelador contra Escudeiro Invasor/i)).toBeInTheDocument();
   expect(within(container).getByLabelText("Dados de combate")).toHaveClass("is-rolling");
 
   act(() => vi.advanceTimersByTime(650));
@@ -66,10 +75,10 @@ const interactiveRoomMap = (type: "merchant" | "treasure" | "event"): RunMap => 
 });
 
 it.each([
-  ["merchant", "Mercador Tributário"],
-  ["treasure", "Cofre dos Dados"],
-  ["event", "Goblin Vendedor de Seguro"],
-] as const)("opens the %s room and keeps the next map choice blocked", (type, dialogName) => {
+  ["merchant", "Fornecedor da Dungeon"],
+  ["treasure", "Estoque da Dungeon"],
+  ["event", "Seguro Anti-Aventureiro"],
+] as const)("opens the %s room as a dungeon-defense room and blocks the next map choice", (type, dialogName) => {
   const { container } = render(<CombatStage initialMap={interactiveRoomMap(type)} />);
 
   fireEvent.click(within(container).getByRole("button", { name: new RegExp(type === "merchant" ? "Mercador" : type === "treasure" ? "Tesouro" : "Evento", "i") }));
@@ -79,15 +88,16 @@ it.each([
 });
 
 it.each([
-  ["elite", 6],
-  ["boss", 8],
-] as const)("uses the %s room rank for the enemy die and presents resolved damage", (rank, sides) => {
+  ["elite", 6, /Capitã Aventureira/i],
+  ["boss", 8, /Fiscal Real da Privatização/i],
+] as const)("uses the %s invader rank for the attack die and presents resolved damage", (rank, sides, invaderName) => {
   vi.useFakeTimers();
   const { container } = render(<CombatStage initialMap={singleRoomMap(rank)} />);
 
   const roomName = rank === "boss" ? "Chefão" : "Elite";
   fireEvent.click(within(container).getByRole("button", { name: new RegExp(`${roomName}.*alcan`, "i") }));
-  expect(within(container).getByLabelText(new RegExp(`Dado de ataque inimigo D${sides}`))).toBeInTheDocument();
+  expect(within(container).getByRole("banner")).toHaveTextContent(invaderName);
+  expect(within(container).getByLabelText(new RegExp(`Dado de ataque invasor D${sides}`))).toBeInTheDocument();
 
   act(() => vi.advanceTimersByTime(650));
   act(() => vi.advanceTimersByTime(2_500));

@@ -36,9 +36,9 @@ import { useAutoCombat } from "./use-auto-combat";
 const COMBAT_TYPES = new Set<RoomType>(["combat", "elite", "boss"]);
 const ENEMY_HP = { combat: 18, elite: 28, boss: 64 } as const;
 const ENEMY_NAME = {
-  combat: "Slime de Recibo",
-  elite: "Inspetor Gelatinoso",
-  boss: "Supervisor Gelatinoso",
+  combat: "Escudeiro Invasor",
+  elite: "Capitã Aventureira",
+  boss: "Fiscal Real da Privatização",
 } as const;
 const COMBAT_GOLD = { normal: 3, elite: 7, boss: 15 } as const;
 
@@ -60,7 +60,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
   const [roomError, setRoomError] = useState<string | null>(null);
   const [combatActive, setCombatActive] = useState(false);
   const [enemyMaxHp, setEnemyMaxHp] = useState(18);
-  const [enemyName, setEnemyName] = useState("Aguardando destino");
+  const [enemyName, setEnemyName] = useState("Aventureiros no portão");
   const [enemyRank, setEnemyRank] = useState<EnemyRank>("normal");
   const [heroHp, setHeroHp] = useState(24);
   const [gold, setGold] = useState(12);
@@ -72,10 +72,10 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
   });
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [classSides, setClassSides] = useState<4 | 6>(4);
-  const [className, setClassName] = useState("Escudeiro");
+  const [className, setClassName] = useState("Slime Zelador");
   const [promotionOpen, setPromotionOpen] = useState(false);
   const [event, setEvent] = useState<BattleAnimationEvent | null>(null);
-  const [message, setMessage] = useState("Escolha um Dado de Local alcançável.");
+  const [message, setMessage] = useState("Defenda a dungeon escolhendo qual sala proteger primeiro.");
   const isHostingerPreview = process.env.NEXT_PUBLIC_HOSTINGER_PREVIEW === "1";
   const mapSurfaceActive = !combatActive && !pendingRoom && !promotionOpen;
 
@@ -83,7 +83,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
     setCombatActive(false);
     setEvent({ id: Date.now(), type: "hit" });
     setGold((current) => current + COMBAT_GOLD[enemyRank]);
-    setMessage("Vitória! Experiência e ouro da sala recebidos.");
+    setMessage("Invasores expulsos! A dungeon recuperou experiência e tesouro.");
     if (classSides === 4) {
       setPromotionOpen(true);
       return;
@@ -133,7 +133,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       setEnemyRank(rank === "combat" ? "normal" : rank);
       setRunEssence(2);
       setCombatActive(true);
-      setMessage("Os dados de dano, defesa e ataque inimigo foram invocados.");
+      setMessage("Um grupo de aventureiros invadiu a sala. O guardião entrou em combate automático.");
       return;
     }
 
@@ -143,13 +143,13 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
         offer: createMerchantOffer(roomId, 0, Object.keys(RUN_ITEMS)),
         purchasedOfferIds: [],
       });
-      setMessage("O mercador abriu o livro-caixa.");
+      setMessage("O fornecedor clandestino abriu o livro-caixa da dungeon.");
       return;
     }
 
     if (node.type === "treasure") {
       setPendingRoom({ kind: "treasure", offer: createTreasureOffer(roomId, 0, Object.keys(RUN_ITEMS)) });
-      setMessage("O cofre exige uma única escolha.");
+      setMessage("O estoque da dungeon permite uma única retirada antes de se trancar.");
       return;
     }
 
@@ -157,11 +157,11 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
       const eventContent = seasonOne.events.find((candidate) => candidate.id === "goblin-insurance");
       if (!eventContent) throw new Error("event content is unavailable");
       setPendingRoom({ kind: "event", offer: createEventOffer(eventContent, roomId, 0), result: null });
-      setMessage("Um goblin agita uma apólice assustadoramente longa.");
+      setMessage("Um goblin agita uma apólice para proteger a dungeon de heróis barulhentos.");
       return;
     }
 
-    setMessage(`Local resolvido: ${node.type}. Experiência de jornada recebida.`);
+    setMessage(`Sala defendida: ${node.type}. A dungeon ficou um pouco mais perigosa.`);
   };
 
   const reroll = (kind: "damage" | "defense") => {
@@ -270,10 +270,10 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
   const choosePromotion = (stageId: string) => {
     const guardian = stageId === "guardian-d6";
     setClassSides(6);
-    setClassName(guardian ? "Guardião" : "Guerreiro");
+    setClassName(guardian ? "Slime Guardião" : "Slime Espadachim");
     setPromotionOpen(false);
     setRoute((current) => ({ ...current, availableRoomIds: [...pendingNextIds] }));
-    setMessage(`${guardian ? "Guardião" : "Guerreiro"} D6 desbloqueado nesta run.`);
+    setMessage(`${guardian ? "Slime Guardião" : "Slime Espadachim"} D6 desbloqueado nesta run.`);
   };
 
   const phaseMessage = combat.phase === "rolling"
@@ -314,7 +314,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
             <div className="room-progress"><b>Sala {route.visitedRoomIds.length}/10</b><span>XP da run · evolução temporária</span></div>
             <div className="enemy"><b>{enemyName}</b><span>♥ {combat.enemyHp}/{enemyMaxHp}</span></div>
           </header>
-          <PhaserBattle event={event} enemyRank={enemyRank} />
+          <PhaserBattle event={event} enemyRank={enemyRank} guardianName={className} invaderName={enemyName} />
           {combat.phase !== "idle" ? (
             <CombatDiceOverlay
               phase={combat.phase}
@@ -340,7 +340,7 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
           >
             Abrir inventário
           </button>
-          <p>Equipe itens apenas entre salas. Durante combate, os baús ficam trancados por segurança sindical.</p>
+          <p>Equipe itens no guardião entre invasões. Durante combate, os baús ficam trancados por segurança sindical.</p>
         </aside>
       </main>
       <InventoryDrawer
@@ -359,8 +359,8 @@ export function CombatStage({ initialMap = previewRunMap }: Readonly<{ initialMa
         <PromotionChoice
           currentDie="D4"
           options={[
-            { id: "warrior-d6", name: "Guerreiro", die: "D6", role: "Ataque", summary: "Faces ofensivas e decisões agressivas." },
-            { id: "guardian-d6", name: "Guardião", die: "D6", role: "Defesa", summary: "Bloqueio, proteção e contra-ataque." },
+            { id: "warrior-d6", name: "Slime Espadachim", die: "D6", role: "Ataque", summary: "Faces ofensivas para expulsar aventureiros rápido." },
+            { id: "guardian-d6", name: "Slime Guardião", die: "D6", role: "Defesa", summary: "Bloqueio, proteção e contra-ataque para segurar a dungeon." },
           ]}
           onChoose={choosePromotion}
         />

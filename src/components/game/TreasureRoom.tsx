@@ -6,13 +6,13 @@ import { RoomOverlay } from "./RoomOverlay";
 
 function treasureDescription(option: TreasureOption): { icon: string; title: string; detail: string } {
   if (option.payload.kind === "gold") {
-    return { icon: "●", title: `${option.payload.amount} ouro`, detail: "Moedas livres de impostos. Provavelmente." };
+    return { icon: "●", title: `${option.payload.amount} ouro`, detail: "Tesouro confiscado de aventureiros invasores." };
   }
   if (option.payload.kind === "essence") {
-    return { icon: "◆", title: `${option.payload.amount} essência`, detail: "Altera um resultado quando o destino apronta." };
+    return { icon: "◆", title: `${option.payload.amount} essência`, detail: "Energia para alterar o destino da defesa." };
   }
   const item = RUN_ITEMS[option.payload.itemId];
-  return { icon: "✦", title: item.name, detail: "Um item para fortalecer esta run." };
+  return { icon: "✦", title: item.name, detail: "Um reforço para o guardião desta run." };
 }
 
 export function TreasureRoom({
@@ -32,14 +32,14 @@ export function TreasureRoom({
 }>) {
   return (
     <RoomOverlay
-      title="Cofre dos Dados"
-      eyebrow="Escolha uma recompensa"
+      title="Estoque da Dungeon"
+      eyebrow="Escolha um reforço para proteger o lar"
       gold={gold}
       heroHp={heroHp}
       heroMaxHp={heroMaxHp}
       essence={essence}
     >
-      <p className="room-flavor">O baú range: “uma escolha por invocador; mãos extras serão tributadas”.</p>
+      <p className="room-flavor">O baú range: “uma retirada por guardião; mãos de herói serão mordidas”.</p>
       <div className="room-card-grid">
         {offer.options.map((option) => {
           const description = treasureDescription(option);
@@ -49,7 +49,7 @@ export function TreasureRoom({
               type="button"
               key={option.offerId}
               onClick={() => onChoose(option.offerId)}
-              aria-label={`Tesouro: escolher ${description.title}`}
+              aria-label={`Estoque: escolher ${description.title}`}
             >
               <span className="room-card-icon" aria-hidden="true">{description.icon}</span>
               <strong>{description.title}</strong>

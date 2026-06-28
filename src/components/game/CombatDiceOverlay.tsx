@@ -56,11 +56,11 @@ export function CombatDiceOverlay({
       <CombatDie die={defense} phase={phase} canReroll={essence > 0} onReroll={onReroll} />
       <article
         className={`combat-die combat-die-enemy is-${phase}`}
-        aria-label={`Dado de ataque inimigo D${enemyAttack.sides}, resultado ${enemyAttack.result}`}
+        aria-label={`Dado de ataque invasor D${enemyAttack.sides}, resultado ${enemyAttack.result}`}
       >
-        <small>Ataque inimigo · D{enemyAttack.sides}</small>
+        <small>Ataque invasor · D{enemyAttack.sides}</small>
         <strong>{enemyAttack.result}</strong>
-        <span>Contra-ataque</span>
+        <span>Investida</span>
       </article>
     </section>
   );

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunMap as RunMapModel } from "@/modules/game-engine/map";
 import { CampaignMap } from "./CampaignMap";
 
@@ -17,8 +17,10 @@ const map: RunMapModel = {
   ],
 };
 
+afterEach(cleanup);
+
 describe("CampaignMap", () => {
-  it("shows the route as the main surface only between rooms", () => {
+  it("shows the route as the main dungeon-defense surface only between rooms", () => {
     const { rerender } = render(
       <CampaignMap
         surface="map"
@@ -32,8 +34,9 @@ describe("CampaignMap", () => {
       />,
     );
 
-    expect(screen.getByRole("region", { name: "Escolha o prÃ³ximo local" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Escolha o próximo local" })).toBeVisible();
     expect(screen.getByText("Fase 1/7")).toBeVisible();
+    expect(screen.getByText(/Defenda a dungeon/i)).toBeVisible();
 
     rerender(
       <CampaignMap
@@ -48,7 +51,7 @@ describe("CampaignMap", () => {
       />,
     );
 
-    expect(screen.queryByRole("region", { name: "Escolha o prÃ³ximo local" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Escolha o próximo local" })).toBeNull();
   });
 
   it("forwards reachable location choices", () => {

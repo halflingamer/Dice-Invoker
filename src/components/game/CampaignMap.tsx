@@ -26,13 +26,13 @@ export function CampaignMap({
   if (surface !== "map") return null;
 
   return (
-    <section className="campaign-map-surface" aria-label="Escolha o prÃ³ximo local">
+    <section className="campaign-map-surface" aria-label="Escolha o próximo local">
       <header className="campaign-map-header">
         <div>
           <span>Fase {phaseIndex}/7</span>
           <h2>{phaseName}</h2>
         </div>
-        <p>Role os Dados de Local e escolha um dos caminhos alcanÃ§Ã¡veis.</p>
+        <p>Defenda a dungeon escolhendo qual sala proteger primeiro contra os aventureiros invasores.</p>
       </header>
       <RunMap
         map={map}

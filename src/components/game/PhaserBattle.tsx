@@ -15,7 +15,14 @@ const ENEMY_TEXTURE: Record<EnemyRank, string> = {
 export function PhaserBattle({
   event,
   enemyRank = "normal",
-}: Readonly<{ event: BattleAnimationEvent | null; enemyRank?: EnemyRank }>) {
+  guardianName = "Slime Zelador",
+  invaderName = "Escudeiro Invasor",
+}: Readonly<{
+  event: BattleAnimationEvent | null;
+  enemyRank?: EnemyRank;
+  guardianName?: string;
+  invaderName?: string;
+}>) {
   const host = useRef<HTMLDivElement>(null);
   const initialEnemyRank = useRef(enemyRank);
   const sceneRef = useRef<{
@@ -29,8 +36,8 @@ export function PhaserBattle({
     void import("phaser").then((Phaser) => {
       if (!live || !host.current) return;
       class BattleScene extends Phaser.Scene {
-        hero!: Phaser.GameObjects.Sprite;
-        enemy!: Phaser.GameObjects.Image;
+        guardian!: Phaser.GameObjects.Image;
+        invader!: Phaser.GameObjects.Sprite;
 
         preload() {
           this.load.image("library", GAME_ASSETS.background);
@@ -46,23 +53,24 @@ export function PhaserBattle({
           this.add.image(width / 2, height / 2, "library").setDisplaySize(width, height);
           this.anims.create({ key: "idle", frames: this.anims.generateFrameNumbers("squire-idle", { start: 0, end: 5 }), frameRate: 6, repeat: -1 });
           this.anims.create({ key: "attack", frames: this.anims.generateFrameNumbers("squire-attack", { start: 0, end: 5 }), frameRate: 12, repeat: 0 });
-          this.hero = this.add.sprite(width * 0.28, height * 0.77, "squire-idle").setScale(1.35).setOrigin(0.5, 1).play("idle");
-          this.enemy = this.add.image(width * 0.72, height * 0.79, ENEMY_TEXTURE[initialEnemyRank.current]).setScale(0.58).setOrigin(0.5, 1);
-          this.tweens.add({ targets: this.enemy, y: "-=7", duration: 850, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+          this.guardian = this.add.image(width * 0.28, height * 0.79, ENEMY_TEXTURE[initialEnemyRank.current]).setScale(0.58).setOrigin(0.5, 1);
+          this.invader = this.add.sprite(width * 0.72, height * 0.77, "squire-idle").setScale(1.35).setFlipX(true).setOrigin(0.5, 1).play("idle");
+          this.tweens.add({ targets: this.guardian, y: "-=7", duration: 850, yoyo: true, repeat: -1, ease: "Sine.inOut" });
           sceneRef.current = { play: (kind) => {
             if (kind === "hit") {
-              this.hero.play("attack").once("animationcomplete", () => this.hero.play("idle"));
-              this.tweens.add({ targets: this.enemy, x: "+=12", alpha: 0.45, duration: 90, yoyo: true, repeat: 1 });
+              this.tweens.add({ targets: this.guardian, x: "+=34", duration: 130, yoyo: true, ease: "Quad.out" });
+              this.tweens.add({ targets: this.invader, x: "+=12", alpha: 0.45, duration: 90, yoyo: true, repeat: 1 });
             } else if (kind === "enemy-hit") {
+              this.invader.play("attack").once("animationcomplete", () => this.invader.play("idle"));
               this.tweens.add({
-                targets: this.enemy,
+                targets: this.invader,
                 x: "-=48",
                 duration: 120,
                 yoyo: true,
                 ease: "Quad.out",
               });
               this.tweens.add({
-                targets: this.hero,
+                targets: this.guardian,
                 x: "-=10",
                 alpha: 0.55,
                 duration: 80,
@@ -70,9 +78,9 @@ export function PhaserBattle({
                 repeat: 1,
               });
             } else {
-              this.tweens.add({ targets: this.hero, scale: 1.48, duration: 110, yoyo: true });
+              this.tweens.add({ targets: this.guardian, scale: 0.66, duration: 110, yoyo: true });
             }
-          }, setEnemyRank: (rank) => this.enemy.setTexture(ENEMY_TEXTURE[rank]) };
+          }, setEnemyRank: (rank) => this.guardian.setTexture(ENEMY_TEXTURE[rank]) };
         }
       }
       game = new Phaser.Game({ type: Phaser.AUTO, parent: host.current!, transparent: true, width: 900, height: 390, pixelArt: true, scene: BattleScene, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });
@@ -82,5 +90,5 @@ export function PhaserBattle({
 
   useEffect(() => { if (event) sceneRef.current?.play(event.type); }, [event]);
   useEffect(() => { sceneRef.current?.setEnemyRank(enemyRank); }, [enemyRank]);
-  return <div className="phaser-host" ref={host} aria-label="Campo de batalha: Escudeiro contra Slime de Recibo" />;
+  return <div className="phaser-host" ref={host} aria-label={`Campo de batalha: ${guardianName} contra ${invaderName}`} />;
 }

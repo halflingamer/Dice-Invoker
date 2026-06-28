@@ -6,7 +6,7 @@ import { TreasureRoom } from "./TreasureRoom";
 
 afterEach(cleanup);
 
-it("sends only the selected merchant offer id", () => {
+it("sends only the selected supplier offer id", () => {
   const onBuy = vi.fn();
 
   render(
@@ -29,12 +29,13 @@ it("sends only the selected merchant offer id", () => {
     />,
   );
 
-  expect(screen.getByRole("dialog", { name: "Mercador Tributário" })).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Fornecedor da Dungeon" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Recursos da dungeon")).toHaveTextContent(/Núcleo/);
   fireEvent.click(screen.getByRole("button", { name: /Comprar Espada Afiada/i }));
   expect(onBuy).toHaveBeenCalledWith("merchant-1");
 });
 
-it("shows one treasure choice for each reward kind", () => {
+it("shows one dungeon stock choice for each reward kind", () => {
   render(
     <TreasureRoom
       gold={12}
@@ -53,12 +54,13 @@ it("shows one treasure choice for each reward kind", () => {
     />,
   );
 
-  expect(screen.getByRole("button", { name: /Tesouro.*9 ouro/i })).toBeEnabled();
-  expect(screen.getByRole("button", { name: /Tesouro.*Amuleto Fiscal/i })).toBeEnabled();
-  expect(screen.getByRole("button", { name: /Tesouro.*1 essência/i })).toBeEnabled();
+  expect(screen.getByRole("dialog", { name: "Estoque da Dungeon" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Estoque.*9 ouro/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /Estoque.*Amuleto Fiscal/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /Estoque.*1 essência/i })).toBeEnabled();
 });
 
-it("shows event choices and then requires acknowledgement of the consequence", () => {
+it("shows anti-adventurer event choices and then requires acknowledgement of the consequence", () => {
   const onChoose = vi.fn();
   const onAcknowledge = vi.fn();
   const { rerender } = render(
@@ -82,6 +84,7 @@ it("shows event choices and then requires acknowledgement of the consequence", (
     />,
   );
 
+  expect(screen.getByRole("dialog", { name: "Seguro Anti-Aventureiro" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /^Roubar/i }));
   expect(onChoose).toHaveBeenCalledWith("steal");
 
@@ -112,7 +115,7 @@ it("shows event choices and then requires acknowledgement of the consequence", (
     />,
   );
 
-  expect(screen.getByText(/pegou você com a mão no cofre/i)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Continuar jornada/i }));
+  expect(screen.getByText(/guardião perdeu 3 de núcleo/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Voltar à defesa/i }));
   expect(onAcknowledge).toHaveBeenCalledOnce();
 });

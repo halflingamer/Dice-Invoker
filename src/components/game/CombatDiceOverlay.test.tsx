@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CombatDiceOverlay } from "./CombatDiceOverlay";
 
 describe("CombatDiceOverlay", () => {
-  it("shows hero and enemy dice but offers rerolls only for hero dice", () => {
+  it("shows guardian and invader dice but offers rerolls only for guardian dice", () => {
     const onReroll = vi.fn();
     render(
       <CombatDiceOverlay
@@ -18,7 +18,7 @@ describe("CombatDiceOverlay", () => {
 
     expect(screen.getByLabelText(/Dado de dano D4, resultado 3/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Dado de defesa D4, resultado 2/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("Dado de ataque inimigo D6, resultado 5")).toBeInTheDocument();
+    expect(screen.getByLabelText("Dado de ataque invasor D6, resultado 5")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Rerrolar/i })).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /Rerrolar dano/i }));
     expect(onReroll).toHaveBeenCalledWith("damage");
